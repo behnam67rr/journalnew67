@@ -1,1501 +1,896 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fa" dir="rtl">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#090d16" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="ذهن تریدر" />
-  <title>ذهن تریدر | ژورنال معاملاتی و مدیریت روان</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<head><link data-panel-gpt-v3="work-policy" rel="stylesheet" href="/__ui-policy/v0.1.6/work.css"><script data-panel-gpt-v3="work-policy-controller">(() => {
+  let enabled = false;
+  let observer;
+  let restoreQueued = false;
+  let restoreTimer;
+  let restoreAttempts = 0;
+  let restoreRetryAt = 0;
+  // A click on server-rendered HTML can be ignored until the app hydrates.
+  // Retry only while Work is still selected, with a finite, per-page budget.
+  // DOM replacement/mutation must not replenish this budget or accelerate it.
+  const restoreDelays = [500, 1000, 2000, 4000, 8000];
+  let pendingFile = false;
+  const marked = new Set();
+  const linkSelector = 'link[data-panel-gpt-v3="work-policy"]';
+  const controlSelector = 'button,a,[role="button"],[role="menuitem"],[role="menuitemradio"],[role="radio"],[role="tab"],[role="checkbox"]';
+  const composerModeSelector = '[aria-label="Composer mode"]';
+  const messageSelector = '[data-message-author-role],article[data-testid^="conversation-turn"]';
+  const normalize = value => (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  // Exact entry labels are a fallback for upstream promotional buttons lacking
+  // stable attributes. Never match message text or generic words like "work".
+  const labels = new Set(['try work', 'try chatgpt work', 'open in work', 'continue in work', 'try in work', 'switch to work', 'try chatgpt work now']);
+  const chatLabels = new Set(['back to chatgpt', 'switch to chatgpt', 'return to chatgpt']);
+  const modeLabel = element => normalize(element.getAttribute('aria-label') || element.textContent);
+  const composerModePair = element => {
+    // Bare "Work" is meaningful only in the named Chat/Work mode selector,
+    // never in a message, project title or an unrelated checkbox group.
+    const group = element.closest?.(composerModeSelector);
+    if (!group || group.closest(messageSelector)) return {};
+    const controls = [...group.querySelectorAll(controlSelector)].filter(control => control.closest(composerModeSelector) === group);
+    const chat = controls.find(control => modeLabel(control) === 'chat');
+    const work = controls.find(control => modeLabel(control) === 'work');
+    return chat && work ? { chat, work } : {};
+  };
+  const isEntry = element => {
+    // Message links may quote the same labels or point to Work documentation.
+    // Fallback matching is only for upstream UI, never conversation content.
+    if (element.closest?.(messageSelector)) return false;
+    if (element.matches?.('[data-tpp-toggle-value="work"]')) return true;
+    if (modeLabel(element) === 'work' && composerModePair(element).work === element) return true;
+    if (labels.has(normalize(element.getAttribute('aria-label'))) || labels.has(normalize(element.textContent))) return true;
+    // A current-surface menu trigger is also named ChatGPT Work: leave that
+    // trigger available so the user can switch back without losing a draft.
+    if (normalize(element.textContent) === 'chatgpt work' && !element.hasAttribute('aria-haspopup') &&
+        element.matches('[role="menuitem"],[role="menuitemradio"],[role="radio"],[role="tab"]')) return true;
+    if (element.tagName === 'A') {
+      try {
+        const url = new URL(element.href, location.href);
+        return url.origin === location.origin && (url.pathname === '/work' || url.pathname.startsWith('/work/') || url.searchParams.get('mode') === 'work');
+      } catch {}
+    }
+    return false;
+  };
+  const mark = element => {
+    if (!element?.matches?.(controlSelector)) return;
+    if (isEntry(element)) {
+      element.setAttribute('data-panel-work-entry', '');
+      marked.add(element);
+    } else if (marked.delete(element)) {
+      // React can reuse the same node for a different, ordinary control.
+      element.removeAttribute('data-panel-work-entry');
+    }
+  };
+  const scan = root => {
+    if (enabled) return;
+    mark(root);
+    root.querySelectorAll?.(controlSelector).forEach(mark);
+  };
+  const preferChat = () => {
+    // Only this UI preference, never auth cookies, drafts or other local data.
+    try {
+      const mode = localStorage.getItem('oai/apps/tpp/chat-surface-mode');
+      if (mode === '"work"' || mode === 'work') localStorage.setItem('oai/apps/tpp/chat-surface-mode', mode === 'work' ? 'chatgpt' : '"chatgpt"');
+    } catch {}
+    // Cookie access may still succeed when localStorage is disabled.
+    try {
+      if (document.cookie.split(';').some(value => value.trim() === 'oai-chat-surface-mode=work')) document.cookie = 'oai-chat-surface-mode=chatgpt; Path=/; SameSite=Lax; Secure';
+    } catch {}
+  };
+  const isSelected = element => element.matches('[aria-checked="true"],[aria-selected="true"],[aria-pressed="true"],[data-state="active"],[data-state="checked"]');
+  const isAvailable = element => element && !element.closest(messageSelector + ',[inert]') && !element.matches(':disabled,[aria-disabled="true"]') && element.getClientRects().length > 0;
+  const nativeChatSwitch = () => {
+    const active = [...document.querySelectorAll('[data-tpp-toggle-value="work"]')].find(element => !element.closest(messageSelector) && isSelected(element));
+    if (active) return { active, chat: [...document.querySelectorAll('[data-tpp-toggle-value="chatgpt"]')].find(isAvailable) };
+    for (const group of document.querySelectorAll(composerModeSelector)) {
+      const { work, chat } = composerModePair(group);
+      if (work && isSelected(work) && isAvailable(chat)) return { active: work, chat };
+    }
+    // Newer home screens have no old two-part toggle. Recognize the exact Work
+    // welcome heading only on a landing route, never arbitrary message text.
+    const heading = [...document.querySelectorAll('h1,[role="heading"]')].find(element =>
+      !element.closest(messageSelector) && normalize(element.textContent) === 'what should we work on?');
+    if (!heading || !document.querySelector('#prompt-textarea')) return {};
+    const explicit = [...document.querySelectorAll(controlSelector)].find(element => isAvailable(element) &&
+      (chatLabels.has(normalize(element.textContent)) || chatLabels.has(normalize(element.getAttribute('aria-label')))));
+    if (explicit) return { active: heading, chat: explicit };
+    // A plain ChatGPT label is only a switch when the same header/navigation
+    // group also identifies ChatGPT Work. Never click a profile/menu item just
+    // because its label mentions ChatGPT, and never open menus automatically.
+    for (const group of document.querySelectorAll('header,nav,[role="navigation"],[role="radiogroup"],[role="tablist"]')) {
+      if (group.closest(messageSelector)) continue;
+      const controls = [...group.querySelectorAll(controlSelector)];
+      if (!controls.some(element => normalize(element.textContent) === 'chatgpt work')) continue;
+      const chat = controls.find(element => normalize(element.textContent) === 'chatgpt' && isAvailable(element));
+      if (chat) return { active: heading, chat };
+    }
+    return {};
+  };
+  const hasDraftOrTask = () => {
+    if (pendingFile || document.querySelector(messageSelector + ',[data-testid="stop-button"],[data-testid="stop-task-button"]')) return true;
+    // Textarea/input value is not textContent; check all editable fields so a
+    // Work task name or another draft cannot be silently abandoned either.
+    for (const input of document.querySelectorAll('textarea,input:not([type]),input[type="text"],input[type="search"],[contenteditable="true"]')) {
+      if ((('value' in input ? input.value : input.textContent) || '').trim()) return true;
+    }
+    if ([...document.querySelectorAll('input[type="file"]')].some(input => input.files?.length)) return true;
+    if (document.querySelector('[data-file-id],[data-testid^="attachment"],[aria-label^="Remove attachment"],[aria-label^="Remove file"]')) return true;
+    const composer = document.querySelector('#prompt-textarea')?.closest('form');
+    return !!composer?.querySelector('img,video,audio');
+  };
+  const cancelRestoreTimer = () => {
+    clearTimeout(restoreTimer);
+    restoreTimer = undefined;
+  };
+  const resetRestore = () => {
+    cancelRestoreTimer();
+    restoreAttempts = 0;
+    restoreRetryAt = 0;
+  };
+  const chatIsSelected = () => {
+    const chat = [...document.querySelectorAll('[data-tpp-toggle-value="chatgpt"]')].find(element => isAvailable(element) && isSelected(element));
+    if (chat) return true;
+    for (const group of document.querySelectorAll(composerModeSelector)) {
+      const pair = composerModePair(group);
+      if (pair.chat && isAvailable(pair.chat) && isSelected(pair.chat) && !isSelected(pair.work)) return true;
+    }
+    return [...document.querySelectorAll('[aria-label="Switch mode, current mode: ChatGPT"]')].some(isAvailable);
+  };
+  const scheduleRestore = () => {
+    if (enabled || restoreTimer !== undefined || restoreAttempts > restoreDelays.length) return;
+    restoreTimer = setTimeout(() => {
+      restoreTimer = undefined;
+      restoreIdleChat();
+    }, Math.max(0, restoreRetryAt - performance.now()));
+  };
+  const restoreIdleChat = () => {
+    if (enabled || restoreQueued) return;
+    restoreQueued = true;
+    queueMicrotask(() => {
+      restoreQueued = false;
+      // Parsing completion is necessary, but is not proof of React hydration.
+      // Each later attempt rechecks policy, route, drafts, tasks and files.
+      if (enabled || !['/', '/work', '/work/'].includes(location.pathname) || hasDraftOrTask()) {
+        cancelRestoreTimer();
+        return;
+      }
+      if (document.readyState === 'loading') return;
+      // Some upstream releases can render a Work shell with no composer when
+      // the account bootstrap failed. There is no native Chat switch in that
+      // error view, so a bounded root reload is the safe recovery: it replays
+      // the server-side Chat preference without touching drafts, messages or
+      // authentication cookies. Never do this on a task, conversation, or
+      // page with any editable/upload state.
+      if (normalizeBrokenWorkLanding()) return;
+      // A conversation may still be hydrating before its messages are present.
+      // Surface recovery is only allowed on a new-chat landing page.
+      const { active, chat } = nativeChatSwitch();
+      if (!active) {
+        // A temporarily removed Work node is not proof of successful recovery.
+        if (chatIsSelected()) resetRestore();
+        else cancelRestoreTimer();
+        return;
+      }
+      // Use the application's own switch. Never reload, rewrite history, or
+      // synthesize a new chat just because upstream changed its navigation UI.
+      // Observe the selected mode on a later pass instead of treating click()
+      // as success. At most six attempts; no polling on normal Chat pages.
+      if (!chat || restoreAttempts > restoreDelays.length) return;
+      if (performance.now() < restoreRetryAt) { scheduleRestore(); return; }
+      preferChat();
+      const delay = restoreDelays[restoreAttempts];
+      restoreAttempts++;
+      restoreRetryAt = performance.now() + (delay || 0);
+      chat.click();
+      if (delay) scheduleRestore();
+    });
+  };
+  const normalizeBrokenWorkLanding = () => {
+    if (enabled || location.pathname !== '/' || hasDraftOrTask()) return false;
+    const title = String(document.title || '');
+    const body = String(document.body?.innerText || '').slice(0, 6000);
+    // Some upstream builds keep the tab title as "ChatGPT" while the
+    // rendered surface header still says "ChatGPT Work". Inspect the landing
+    // markup too, but only alongside the exact bootstrap error and root route.
+    if (!/chatgpt\s+work/i.test(`${title}\n${body}`) || !/couldn[’']t\s+load\s+your\s+account|unable\s+to\s+load\s+your\s+account/i.test(body)) return false;
+    try {
+      if (sessionStorage.getItem('panel-work-broken-landing-retried') === '1') return false;
+      sessionStorage.setItem('panel-work-broken-landing-retried', '1');
+    } catch { return false; }
+    preferChat();
+    location.replace('/');
+    return true;
+  };
+  const apply = next => {
+    enabled = next;
+    resetRestore();
+    document.documentElement?.toggleAttribute('data-panel-work-blocked', !enabled);
+    if (enabled) {
+      observer?.disconnect(); observer = undefined;
+      marked.forEach(element => element.removeAttribute('data-panel-work-entry')); marked.clear();
+      document.querySelectorAll(linkSelector).forEach(link => link.remove());
+      return;
+    }
+    preferChat();
+    if (!document.querySelector(linkSelector)) {
+      const link = document.createElement('link');
+      link.setAttribute('data-panel-gpt-v3', 'work-policy');link.rel='stylesheet';link.href='/__ui-policy/v0.1.6/work.css';
+      (document.head || document.documentElement).appendChild(link);
+    }
+    scan(document);
+    restoreIdleChat();
+    if (!observer && document.documentElement) {
+      observer = new MutationObserver(records => {
+        for (const record of records) {
+          // Only new/changed entry controls are examined, not every message.
+          mark(record.target?.closest?.(controlSelector));
+          const modeGroup = record.target?.closest?.(composerModeSelector);
+          if (modeGroup) scan(modeGroup);
+          if (record.type === 'attributes') scan(record.target);
+          record.addedNodes.forEach(scan);
+        }
+        for (const element of marked) if (!element.isConnected) marked.delete(element);
+        restoreIdleChat();
+      });
+      observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['href','aria-label','aria-checked','aria-selected','aria-pressed','aria-disabled','disabled','data-state','data-tpp-toggle-value','data-message-author-role','data-testid']});
+    }
+  };
+  document.addEventListener('click',event => {
+    if (enabled) return;
+    const control=event.target?.closest?.(controlSelector);
+    if (control && isEntry(control)) { event.preventDefault();event.stopImmediatePropagation(); }
+  },true);
+  // File selections can live in React state after their input is cleared. Once
+  // observed, conservatively leave this page alone, even if the preview moves.
+  document.addEventListener('change', event => {
+    if (event.target?.matches?.('input[type="file"]') && event.target.files?.length) pendingFile = true;
+  }, true);
+  for (const type of ['drop', 'paste']) document.addEventListener(type, event => {
+    if ((event.dataTransfer || event.clipboardData)?.files?.length) pendingFile = true;
+  }, true);
+  document.addEventListener('input', restoreIdleChat, true);
+  document.addEventListener('DOMContentLoaded', restoreIdleChat, {once:true});
+  addEventListener('pagehide', cancelRestoreTimer);
+  addEventListener('pageshow', restoreIdleChat);
+  addEventListener('panel-work-policy-state',event=>{
+    if (typeof event.detail?.enabled === 'boolean' && event.detail.enabled !== enabled) apply(event.detail.enabled);
+  });
+  apply(enabled);
+})();
+</script><link data-panel-gpt-v3="ui-policy" rel="stylesheet" href="/__ui-policy/v0.1.7/safe.css"><script data-panel-gpt-v3="ui-policy-entries">(() => {
+  // Presentation only. Recognize exact menu labels where upstream provides no
+  // stable href/test-id. CSS owns hiding; no request/history/composer hooks.
+  let enabled = true;
+  let observer = null;
+  const marker = 'data-panel-safe-entry';
+  const menuEntries = '[role="menuitem"], [role="option"], div.__menu-item';
+  const controls = 'button, a, [role="button"]';
+  const candidates = menuEntries + ', ' + controls;
+  const protectedArea = 'article, [data-message-author-role], [contenteditable="true"], #prompt-textarea';
+  const labels = new Set(['settings', 'personalization', 'workspace settings', 'memory',
+    'account settings', 'manage workspace', 'invite team members', 'add teammates',
+    'تنظیمات', 'شخصی‌سازی', 'شخصی سازی', 'تنظیمات فضای کاری', 'حافظه']);
+  const clean = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  function classify(element) {
+    if (element.closest(protectedArea)) return;
+    const inMenu = element.closest('[role="menu"], [role="listbox"]') || element.matches('div.__menu-item');
+    const isMenuEntry = inMenu && element.matches(menuEntries);
+    // Slash rows may put a description after the title. Only use whole text
+    // or an exact direct title node, never a substring anywhere in the row.
+    const names = [element.getAttribute('aria-label'), element.textContent];
+    for (const child of element.children) {
+      names.push(child.textContent);
+      for (const title of child.children) if (title.tagName !== 'SVG') names.push(title.textContent);
+    }
+    // Current composer buttons nest their title several spans deep in this
+    // stable row. Read only its first real text, skipping icon/style text;
+    // the following description must not identify a different action.
+    const menuRow = element.querySelector(':scope > [data-menu-row-content="true"]');
+    if (menuRow) {
+      const walker = document.createTreeWalker(menuRow, NodeFilter.SHOW_TEXT);
+      for (let title = walker.nextNode(); title; title = walker.nextNode()) {
+        if (title.parentElement?.closest('svg, style, script, [aria-hidden="true"], .leadingIcon')) continue;
+        if (!clean(title.nodeValue)) continue;
+        names.push(title.nodeValue);
+        break;
+      }
+    }
+    const exactNames = names.map(clean);
+    // The current composer picker is a plain button with a title and a
+    // description, not a menuitem or a #library sprite. Match only the exact
+    // action on an interactive entry; never its popover/dialog container.
+    const isLibraryEntry = (isMenuEntry || element.matches(controls)) &&
+      (exactNames.includes('add from library') ||
+        ((inMenu || element.closest('nav, [role="navigation"]')) && exactNames.includes('library')));
+    if (isLibraryEntry) element.setAttribute(marker, 'library');
+    else if (isMenuEntry && exactNames.some(name => labels.has(name))) element.setAttribute(marker, 'settings');
+    else if (['settings', 'library'].includes(element.getAttribute(marker))) element.removeAttribute(marker);
+  }
+  function scan(root) {
+    if (!enabled || !root?.querySelectorAll || root.closest?.(protectedArea)) return;
+    if (root.matches?.(candidates)) classify(root);
+    root.querySelectorAll(candidates).forEach(classify);
+    const menus = root.matches?.('[role="menu"]') ? [root] : root.querySelectorAll('[role="menu"]');
+    for (const menu of menus) {
+      const owner = document.getElementById(menu.getAttribute('aria-labelledby') || '');
+      if (owner?.getAttribute('aria-label') !== 'Open profile menu') continue;
+      const first = menu.querySelector('[role="menuitem"]');
+      // Current profile menu's first submenu is the shared account/workspace
+      // identity chooser. Do not affect Help or other menu submenus.
+      if (first?.getAttribute('aria-haspopup') === 'menu') first.setAttribute(marker, 'account');
+    }
+  }
+  function start() {
+    if (!enabled || !document.body) return;
+    scan(document.body);
+    if (observer) return;
+    observer = new MutationObserver(records => {
+      for (const record of records) {
+        if (record.target.nodeType === 1 && record.target.closest(protectedArea)) continue;
+        const row = record.target.parentElement?.closest(candidates) || record.target.closest?.(candidates);
+        if (row) classify(row);
+        for (const node of record.addedNodes) if (node.nodeType === 1) scan(node);
+      }
+    });
+    // Only added fragments and changed controls are inspected; no full rescan per
+    // streamed token and no attributes/characterData observer.
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+  addEventListener('panel-ui-policy-state', event => {
+    if (typeof event.detail?.enabled !== 'boolean') return;
+    enabled = event.detail.enabled;
+    if (enabled) start();
+    else {
+      observer?.disconnect(); observer = null;
+      document.querySelectorAll('[' + marker + ']').forEach(element => element.removeAttribute(marker));
+    }
+  });
+  document.addEventListener('DOMContentLoaded', start, { once: true });
+  start();
+})();
+</script><script data-panel-gpt-v3="ui-policy-controller">(() => {
+  // Only our stylesheet is managed here. No chat requests, history methods,
+  // composer elements or upstream DOM are intercepted or changed.
+  const selector = 'link[data-panel-gpt-v3="ui-policy"]';
+  let pending = false;
+  let enabled = document.querySelectorAll(selector).length > 0;
+  let current = null;
+  let retry = null;
+  let watchdog = null;
+  let attempts = 0;
+  let headObserver = null;
+  const delays = [500, 1500, 4000];
+  const watched = new WeakSet();
+  const failed = new WeakSet();
+
+  const loaded = link => {
+    try { return !!link.sheet?.cssRules?.length; } catch { return false; }
+  };
+  const cancelTimers = () => {
+    clearTimeout(retry); clearTimeout(watchdog);
+    retry = watchdog = null;
+  };
+  const recover = () => {
+    if (!enabled || retry !== null || attempts >= delays.length) return;
+    retry = setTimeout(() => {
+      retry = null;
+      if (!enabled) return;
+      if (current && loaded(current) && Array.from(document.querySelectorAll(selector)).includes(current)) return;
+      clearTimeout(watchdog); watchdog = null;
+      document.querySelectorAll(selector).forEach(link => link.remove());
+      current = null;
+      ensure();
+    }, delays[attempts++]);
+  };
+  const inspect = link => {
+    if (!enabled || current !== link) return;
+    if (loaded(link)) { cancelTimers(); return; }
+    if (failed.has(link) || link.sheet) recover();
+  };
+  const ensure = () => {
+    if (!enabled) return;
+    let link = document.querySelectorAll(selector)[0];
+    if (!link) {
+      link = document.createElement('link');
+      link.setAttribute('data-panel-gpt-v3', 'ui-policy');
+      link.rel = 'stylesheet';
+      link.href = '/__ui-policy/v0.1.7/safe.css' + (attempts ? '?retry=' + attempts : '');
+    }
+    current = link;
+    if (!watched.has(link)) {
+      watched.add(link);
+      link.addEventListener('load', () => { failed.add(link); inspect(link); });
+      link.addEventListener('error', () => { failed.add(link); inspect(link); });
+      clearTimeout(watchdog);
+      // Also recover a stalled load or an SSR link whose error preceded us.
+      watchdog = setTimeout(() => { failed.add(link); inspect(link); }, 6000);
+    }
+    if (!link.parentNode) (document.head || document.documentElement).appendChild(link);
+    inspect(link);
+    if (!headObserver && document.head && typeof MutationObserver !== 'undefined') {
+      headObserver = new MutationObserver(() => {
+        if (enabled && !document.querySelectorAll(selector).length) recover();
+      });
+      // Observe only stylesheet removal, never streaming messages/composer.
+      headObserver.observe(document.head, { childList: true });
+    }
+  };
+
+  const apply = next => {
+    enabled = next;
+    if (!enabled) {
+      cancelTimers();
+      headObserver?.disconnect(); headObserver = null;
+      document.querySelectorAll(selector).forEach(link => link.remove());
+      current = null;
+    } else {
+      // A later explicit page event may retry after a previous bounded failure.
+      if (retry === null) attempts = 0;
+      ensure();
+    }
+    dispatchEvent(new CustomEvent('panel-ui-policy-state', { detail: { enabled } }));
+  };
+
+  const sync = async () => {
+    if (pending || document.visibilityState === 'hidden') return;
+    pending = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch('/__ui-policy/state', {
+        credentials: 'same-origin', cache: 'no-store',
+        headers: { Accept: 'application/json' }, signal: controller.signal
+      });
+      if (!response.ok) return;
+      const state = await response.json();
+      if (typeof state.enabled === 'boolean') apply(state.enabled);
+      if (typeof state.workEnabled === 'boolean') dispatchEvent(new CustomEvent('panel-work-policy-state', { detail: { enabled: state.workEnabled } }));
+    } catch {
+      // A transient local network failure keeps the last known presentation.
+    } finally {
+      clearTimeout(timeout);
+      pending = false;
+    }
+  };
+
+  // Event-driven refresh only: no periodic polling and no pushState/fetch patch.
+  addEventListener('focus', sync);
+  addEventListener('pageshow', sync);
+  addEventListener('popstate', sync);
+  addEventListener('hashchange', sync);
+  document.addEventListener('visibilitychange', sync);
+  document.addEventListener('click', event => {
+    const anchor = event.target?.closest?.('a[href]');
+    if (!anchor) return;
+    try {
+      if (new URL(anchor.href, location.href).origin === location.origin) sync();
+    } catch {}
+  }, true);
+  addEventListener('load', () => { if (current) { failed.add(current); inspect(current); } });
+  ensure();
+  sync();
+})();
+</script><script data-panel-gpt-v3="preview-frame">(() => {
+  const host = 'connector-openai-deep-research.web-sandbox.oaiusercontent.com';
+  const map = value => {
+    try {
+      let url = new URL(String(value), location.href);
+      // JSON/HTML responses may already contain the gateway's external URL.
+      // Unwrap only our own exact /__ext route, then apply the same host check.
+      if (url.origin === location.origin && url.pathname === '/__ext' && url.searchParams.has('u')) {
+        url = new URL(url.searchParams.get('u'));
+      }
+      if (url.protocol === 'https:' && url.hostname === host && (!url.port || url.port === '443') && !url.username && !url.password) {
+        return location.origin + '/__sandbox/' + host + url.pathname + url.search + url.hash;
+      }
+      if (url.origin === 'https://cdn.platform.openai.com' && !url.username && !url.password && !url.search && /^\/deployments\/dil\/v[1-9][0-9]{0,3}\/runner\.html$/.test(url.pathname)) {
+        return location.origin + '/__dil' + url.pathname + url.hash;
+      }
+    } catch {}
+    return value;
+  };
+  // Run before React sets src, so its postMessage origin check observes the
+  // mapped address from the start. Other elements and iframe hosts are untouched.
+  const proto = HTMLIFrameElement.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(proto, 'src');
+  if (descriptor?.set && descriptor.configurable) {
+    Object.defineProperty(proto, 'src', {
+      ...descriptor,
+      set(value) { descriptor.set.call(this, map(value)); }
+    });
+  }
+  const setAttribute = proto.setAttribute;
+  proto.setAttribute = function(name, value) {
+    return setAttribute.call(this, name, String(name).toLowerCase() === 'src' ? map(value) : value);
+  };
+})();
+</script><script data-panel-gpt-v3="gateway">(()=>{
+const parse=value=>{try{return new URL(String(value),location.href)}catch{return null}};
+const map=(value,websocket=false)=>{const url=parse(value);if(!url)return String(value);const host=url.hostname.toLowerCase();if(host==='chatgpt.com'||host==='ws.chatgpt.com'){url.protocol=websocket?(location.protocol==='https:'?'wss:':'ws:'):location.protocol;url.host=location.host;if(host==='ws.chatgpt.com')url.pathname='/__ws'+url.pathname;return url.toString()}if(host==='oaiusercontent.com'||host.endsWith('.oaiusercontent.com')||host==='cdn.oaistatic.com'||host.endsWith('.oaistatic.com')||host==='blob.core.windows.net'||host.endsWith('.blob.core.windows.net'))return location.origin+'/__ext?u='+encodeURIComponent(url.toString());return String(value)};
+try{if(!globalThis.crypto)globalThis.crypto={};if(typeof globalThis.crypto.randomUUID!=='function'){const uuid=()=>{const bytes=new Uint8Array(16);if(typeof globalThis.crypto.getRandomValues==='function')globalThis.crypto.getRandomValues(bytes);else for(let index=0;index<bytes.length;index++)bytes[index]=Math.floor(Math.random()*256);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20)};try{Object.defineProperty(globalThis.crypto,'randomUUID',{value:uuid,configurable:true})}catch{globalThis.crypto.randomUUID=uuid}}}catch{}
+try{const serviceWorker=navigator.serviceWorker;if(serviceWorker){const disabledRegistration={scope:location.origin+'/',active:null,installing:null,waiting:null,unregister:()=>Promise.resolve(true),update:()=>Promise.resolve()};const disabledRegister=()=>Promise.resolve(disabledRegistration);try{Object.defineProperty(serviceWorker,'register',{value:disabledRegister,configurable:true})}catch{try{serviceWorker.register=disabledRegister}catch{}}const cleanKey='panel-gpt-v3-sw-clean-v3';if(!sessionStorage.getItem(cleanKey)){sessionStorage.setItem(cleanKey,'1');const cleanup=[];if(serviceWorker.getRegistrations)cleanup.push(serviceWorker.getRegistrations().then(registrations=>Promise.all(registrations.map(registration=>registration.unregister()))).catch(()=>{}));if(globalThis.caches?.keys)cleanup.push(caches.keys().then(keys=>Promise.all(keys.map(key=>caches.delete(key)))).catch(()=>{}));Promise.all(cleanup).catch(()=>{})}}}catch{}
+const nativeFetch=window.fetch.bind(window);
+const streamBody=async body=>{if(!body||typeof body.getReader!=='function')return body;try{return await new Response(body).arrayBuffer()}catch{return body}};
+const requestOptions=async(source,override)=>{const options={};if(source instanceof Request){options.method=source.method;options.headers=new Headers(source.headers);for(const key of ['cache','redirect','referrer','referrerPolicy','integrity','signal'])if(source[key]!==undefined)options[key]=source[key]}if(override)for(const key of Object.keys(override))options[key]=override[key];const method=String(options.method||(source instanceof Request?source.method:'GET')).toUpperCase();if(method==='GET'||method==='HEAD')delete options.body;else if(override&&Object.prototype.hasOwnProperty.call(override,'body'))options.body=await streamBody(override.body);else if(source instanceof Request&&source.body){try{options.body=await source.clone().arrayBuffer()}catch{try{options.body=await source.arrayBuffer()}catch{}}}options.credentials='same-origin';options.mode='same-origin';delete options.duplex;if(options.body!=null)delete options.keepalive;return options};
+window.fetch=async(input,init)=>{const original=input instanceof Request?input.url:input;const mapped=map(original);if(mapped===String(original))return nativeFetch(input,init);const options=await requestOptions(input instanceof Request?input:null,init);return nativeFetch(mapped,options)};
+const nativeOpen=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(method,url,...rest){return nativeOpen.call(this,method,map(url),...rest)};
+if(window.EventSource){const NativeEventSource=window.EventSource;window.EventSource=function(url,options){return new NativeEventSource(map(url),options)};window.EventSource.prototype=NativeEventSource.prototype}
+if(window.WebSocket){const NativeWebSocket=window.WebSocket;window.WebSocket=function(url,protocols){const mapped=map(url,true);return protocols===undefined?new NativeWebSocket(mapped):new NativeWebSocket(mapped,protocols)};window.WebSocket.prototype=NativeWebSocket.prototype;Object.setPrototypeOf(window.WebSocket,NativeWebSocket)}
+if(navigator.sendBeacon){const nativeBeacon=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=(url,data)=>nativeBeacon(map(url),data)}
+const fix=root=>{if(!root?.querySelectorAll)return;for(const element of [root,...root.querySelectorAll('[src],[href],[action]')])for(const attribute of ['src','href','action'])if(element.hasAttribute?.(attribute)){const current=element.getAttribute(attribute),mapped=map(current);if(mapped!==current)element.setAttribute(attribute,mapped)}};
+const startDomBridge=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>{fix(document.documentElement);new MutationObserver(records=>records.forEach(record=>{if(record.type==='attributes')fix(record.target);else record.addedNodes.forEach(fix)})).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src','href','action']})},350)));
+if(document.readyState==='loading')addEventListener('DOMContentLoaded',startDomBridge,{once:true});else startDomBridge();
+})();</script><script data-panel-gpt-v3="customer-logout">(() => {
+  // Customer logout belongs to the panel session, not the shared ChatGPT
+  // account. Keep this independent of optional presentation/Work policies.
+  const protectedArea = 'article,[data-message-author-role],[contenteditable="true"],#prompt-textarea,textarea,input';
+  const labels = new Set(['log out', 'خروج']);
+  const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const isLogout = target => {
+    if (target?.closest?.(protectedArea)) return false;
+    const item = target?.closest?.('[role="menuitem"]');
+    if (!item || item.closest(protectedArea) || item.matches('[aria-disabled="true"],:disabled')) return false;
+    const menu = item.closest('[role="menu"]');
+    if (!menu || menu.closest(protectedArea)) return false;
+    // Only the proven profile menu, never arbitrary menus or quoted content.
+    const owner = document.getElementById(menu.getAttribute('aria-labelledby') || '');
+    // The live ChatGPT menu can use a hydration-generated labelledby ID that
+    // differs from the trigger ID. Its own accessible menu label is the
+    // stable signal; keep the trigger check as a fallback for older builds.
+    const profileMenu = normalize(menu.getAttribute('aria-label')) === 'open profile menu' ||
+      owner?.getAttribute('aria-label') === 'Open profile menu';
+    if (!profileMenu || owner?.closest(protectedArea)) return false;
+    const text = normalize(item.textContent);
+    const accessibleName = normalize(item.getAttribute('aria-label'));
+    // Require the whole name: "Log out all devices" must never be captured.
+    return labels.has(accessibleName || text) && (!text || labels.has(text));
+  };
+  const logout = event => {
+    if (event.type === 'click' && event.button !== 0) return;
+    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+    if (!isLogout(event.target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    // A document navigation avoids upstream SPA signout/CSRF behavior and
+    // ensures that /access replaces the stale in-memory authenticated shell.
+    location.assign('/logout');
+  };
+  // Window capture runs before React's document/menu listeners, including
+  // menu libraries which activate keyboard items directly on keydown.
+  addEventListener('click', logout, true);
+  addEventListener('keydown', logout, true);
+})();
+</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="description" content="ذهن تریدر؛ ژورنال معاملاتی، تحلیل عملکرد و مدیریت روان‌شناسی ترید">
+  <title>ذهن تریدر 2.0</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <style>
-    :root {
-      --bg-body: #090d16;
-      --bg-surface: #111827;
-      --bg-surface-2: #172033;
-      --bg-glass: rgba(17, 24, 39, 0.85);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --border-color: rgba(148, 163, 184, 0.16);
-      --accent: #10b981;
-      --accent-hover: #059669;
-      --accent-soft: rgba(16, 185, 129, 0.14);
-      --danger: #ef4444;
-      --danger-soft: rgba(239, 68, 68, 0.15);
-      --warn: #f59e0b;
-      --warn-soft: rgba(245, 158, 11, 0.15);
-      --info: #38bdf8;
-      --info-soft: rgba(56, 189, 248, 0.15);
-      --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-      --radius-lg: 20px;
-      --radius-md: 14px;
-      --radius-sm: 10px;
-      --nav-h: 72px;
-    }
-
-    body.light-mode {
-      --bg-body: #f1f5f9;
-      --bg-surface: #ffffff;
-      --bg-surface-2: #f8fafc;
-      --bg-glass: rgba(255, 255, 255, 0.9);
-      --text-main: #0f172a;
-      --text-muted: #475569;
-      --border-color: rgba(15, 23, 42, 0.12);
-      --shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
-    }
-
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    html, body {
-      margin: 0;
-      padding: 0;
-      font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
-      background-color: var(--bg-body);
-      color: var(--text-main);
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
-
-    .app-shell {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 16px 14px calc(var(--nav-h) + 28px);
-    }
-
-    /* Lock Screen */
-    .lock-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 999;
-      background: radial-gradient(circle at top right, rgba(16, 185, 129, 0.16), transparent 50%), var(--bg-body);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .lock-card {
-      width: 100%;
-      max-width: 410px;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-lg);
-      padding: 26px 22px;
-      box-shadow: var(--shadow);
-    }
-
-    .lock-logo {
-      width: 56px;
-      height: 56px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, #10b981, #0ea5e9);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 14px;
-      color: #fff;
-      font-weight: 800;
-      font-size: 22px;
-    }
-
-    /* Header */
-    .topbar {
-      position: sticky;
-      top: 10px;
-      z-index: 40;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 12px 14px;
-      background: var(--bg-glass);
-      backdrop-filter: blur(14px);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow);
-      margin-bottom: 16px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .brand-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #10b981, #059669);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 16px;
-      flex-shrink: 0;
-    }
-
-    .brand-title {
-      font-weight: 800;
-      font-size: 15px;
-      line-height: 1.2;
-    }
-
-    .brand-sub {
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .icon-btn {
-      width: 38px;
-      height: 38px;
-      border-radius: 11px;
-      border: 1px solid var(--border-color);
-      background: var(--bg-surface-2);
-      color: var(--text-main);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 15px;
-      transition: 0.18s ease;
-    }
-
-    .icon-btn:hover {
-      border-color: var(--accent);
-    }
-
-    .icon-btn.syncing {
-      border-color: var(--info);
-      color: var(--info);
-      animation: pulseSync 1.1s infinite;
-    }
-
-    @keyframes pulseSync {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(0.95); }
-    }
-
-    /* Cards & Layout */
-    .card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-lg);
-      padding: 18px;
-      box-shadow: var(--shadow);
-      margin-bottom: 16px;
-    }
-
-    .card-title {
-      font-size: 15px;
-      font-weight: 700;
-      margin: 0 0 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    @media (min-width: 720px) {
-      .stats-grid {
-        grid-template-columns: repeat(4, 1fr);
-      }
-    }
-
-    .stat-box {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-md);
-      padding: 15px;
-      box-shadow: var(--shadow);
-    }
-
-    .stat-label {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-    }
-
-    .stat-val {
-      font-size: 20px;
-      font-weight: 800;
-      direction: ltr;
-      text-align: right;
-    }
-
-    .stat-sub {
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 5px;
-    }
-
-    .pos { color: var(--accent); }
-    .neg { color: var(--danger); }
-
-    /* Banner */
-    .alert-banner {
-      background: var(--warn-soft);
-      border: 1px solid rgba(245, 158, 11, 0.35);
-      border-radius: var(--radius-md);
-      padding: 14px 16px;
-      margin-bottom: 16px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .alert-banner.danger {
-      background: var(--danger-soft);
-      border-color: rgba(239, 68, 68, 0.35);
-    }
-
-    /* Form Controls */
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-    }
-
-    @media (min-width: 640px) {
-      .form-grid.two-col {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-bottom: 10px;
-    }
-
-    .field label {
-      font-size: 12.5px;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    input, select, textarea {
-      width: 100%;
-      padding: 11px 13px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-color);
-      background: var(--bg-surface-2);
-      color: var(--text-main);
-      font-family: inherit;
-      font-size: 13.5px;
-      outline: none;
-    }
-
-    input:focus, select:focus, textarea:focus {
-      border-color: var(--accent);
-    }
-
-    input[type="range"] {
-      padding: 0;
-      accent-color: var(--accent);
-      cursor: pointer;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-      padding: 11px 16px;
-      border-radius: var(--radius-sm);
-      border: 1px solid transparent;
-      font-family: inherit;
-      font-size: 13.5px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: 0.18s ease;
-    }
-
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-    }
-
-    .btn-primary:hover {
-      background: var(--accent-hover);
-    }
-
-    .btn-warn {
-      background: var(--warn);
-      color: #090d16;
-    }
-
-    .btn-danger {
-      background: var(--danger-soft);
-      color: var(--danger);
-      border-color: rgba(239, 68, 68, 0.3);
-    }
-
-    .btn-ghost {
-      background: var(--bg-surface-2);
-      color: var(--text-main);
-      border-color: var(--border-color);
-    }
-
-    .btn-sm {
-      padding: 7px 11px;
-      font-size: 12px;
-      border-radius: 8px;
-    }
-
-    .btn-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    /* Chips & Tags */
-    .chip-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .chip {
-      padding: 7px 12px;
-      border-radius: 999px;
-      border: 1px solid var(--border-color);
-      background: var(--bg-surface-2);
-      color: var(--text-muted);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .chip.active {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 9px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .badge-warn {
-      background: var(--warn-soft);
-      color: var(--warn);
-    }
-
-    .badge-info {
-      background: var(--info-soft);
-      color: var(--info);
-    }
-
-    .badge-ok {
-      background: var(--accent-soft);
-      color: var(--accent);
-    }
-
-    .badge-bad {
-      background: var(--danger-soft);
-      color: var(--danger);
-    }
-
-    /* Trade Cards */
-    .trade-card {
-      background: var(--bg-surface-2);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-md);
-      padding: 14px;
-      margin-bottom: 10px;
-    }
-
-    .trade-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-
-    .trade-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-bottom: 10px;
-    }
-
-    .trade-foot {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border-color);
-    }
-
-    /* Breathing Circle */
-    .breath-box {
-      text-align: center;
-      padding: 16px;
-    }
-
-    .breath-circle {
-      width: 132px;
-      height: 132px;
-      border-radius: 50%;
-      margin: 12px auto;
-      background: radial-gradient(circle, rgba(16, 185, 129, 0.35), rgba(56, 189, 248, 0.15));
-      border: 2px solid var(--accent);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.9s ease-in-out, border-color 0.4s ease;
-    }
-
-    .breath-circle.expand {
-      transform: scale(1.18);
-      border-color: var(--info);
-    }
-
-    .breath-circle.contract {
-      transform: scale(0.88);
-      border-color: var(--warn);
-    }
-
-    .timer-display {
-      font-size: 28px;
-      font-weight: 800;
-      direction: ltr;
-      margin: 10px 0;
-    }
-
-    /* Bottom Nav */
-    .bottom-nav {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: var(--nav-h);
-      background: var(--bg-glass);
-      backdrop-filter: blur(16px);
-      border-top: 1px solid var(--border-color);
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      z-index: 50;
-    }
-
-    .nav-item {
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-family: inherit;
-      font-size: 11px;
-      font-weight: 600;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      cursor: pointer;
-      position: relative;
-    }
-
-    .nav-item.active {
-      color: var(--accent);
-      font-weight: 700;
-    }
-
-    .nav-dot {
-      position: absolute;
-      top: 9px;
-      right: 26%;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--warn);
-    }
-
-    /* Modal */
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.68);
-      z-index: 120;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-    }
-
-    .modal-backdrop.open {
-      display: flex;
-    }
-
-    .modal-box {
-      width: 100%;
-      max-width: 480px;
-      max-height: 88vh;
-      overflow-y: auto;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-lg);
-      padding: 20px;
-      box-shadow: var(--shadow);
-    }
-
-    .toast {
-      position: fixed;
-      bottom: calc(var(--nav-h) + 14px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: #0f172a;
-      color: #f8fafc;
-      border: 1px solid var(--border-color);
-      padding: 10px 16px;
-      border-radius: 999px;
-      font-size: 12.5px;
-      z-index: 200;
-      box-shadow: var(--shadow);
-      display: none;
-      white-space: nowrap;
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    code.block-code {
-      display: block;
-      background: var(--bg-body);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-sm);
-      padding: 12px;
-      font-size: 11.5px;
-      direction: ltr;
-      text-align: left;
-      overflow-x: auto;
-      white-space: pre;
-      margin: 8px 0;
-    }
+    :root{--bg:#0b1220;--panel:#111c2e;--panel2:#17243a;--text:#eef4ff;--muted:#91a3bd;--line:#263650;--green:#16c784;--red:#ff6577;--amber:#f4b740;--blue:#58b5f7;--shadow:0 16px 40px #0005;--radius:18px}
+    body.light{--bg:#f1f5fa;--panel:#fff;--panel2:#f5f8fc;--text:#17243a;--muted:#63738a;--line:#dce5ef;--shadow:0 12px 30px #24364b12}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Vazirmatn,Tahoma,Arial,sans-serif;background:var(--bg);color:var(--text)}body{padding-bottom:82px}button,input,select,textarea{font:inherit}button{cursor:pointer}
+    .hidden{display:none!important}.muted{color:var(--muted)}.small{font-size:12px}.ltr{direction:ltr;unicode-bidi:embed}.positive{color:var(--green)}.negative{color:var(--red)}.warning{color:var(--amber)}
+    .login-wrap{position:fixed;inset:0;z-index:100;background:radial-gradient(circle at 80% 10%,#16c78424,transparent 34%),var(--bg);display:grid;place-items:center;padding:20px}.login-card{width:min(100%,430px);background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:28px;box-shadow:var(--shadow)}.logo{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,#16c784,#2785d7);color:#fff;font-weight:900;font-size:20px;margin-bottom:16px}.login-card h1{font-size:22px;margin:0 0 8px}.login-card p{color:var(--muted);font-size:13px;line-height:1.9;margin:0 0 18px}
+    .app{max-width:1440px;margin:auto;padding:18px 20px 30px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px}.sidebar{position:sticky;top:18px;height:calc(100vh - 36px);background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:18px 12px;display:flex;flex-direction:column;gap:8px}.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px;border-bottom:1px solid var(--line);margin-bottom:8px}.brand .logo{margin:0;width:42px;height:42px;font-size:17px}.brand b{display:block}.brand span{font-size:11px;color:var(--muted)}.nav{display:grid;gap:5px}.nav button{border:0;background:transparent;color:var(--muted);text-align:right;padding:12px 13px;border-radius:12px;font-size:13px;display:flex;align-items:center;gap:10px}.nav button.active,.nav button:hover{background:var(--panel2);color:var(--green)}.nav .ico{width:22px;text-align:center;font-size:17px}.side-foot{margin-top:auto;border-top:1px solid var(--line);padding:14px 8px 2px;color:var(--muted);font-size:11px;line-height:1.9}
+    .main{min-width:0}.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:13px 16px;box-shadow:var(--shadow)}.topbar h2{font-size:17px;margin:0}.topbar p{font-size:11px;color:var(--muted);margin:3px 0 0}.actions{display:flex;gap:7px;flex-wrap:wrap}.icon-btn,.btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:11px;padding:9px 12px;font-size:12px}.icon-btn{min-width:39px}.btn.primary{background:var(--green);color:#062016;border-color:var(--green);font-weight:800}.btn.danger{color:var(--red);border-color:#ff657744;background:#ff657710}.btn.warn{color:var(--amber);border-color:#f4b74055;background:#f4b74012}.btn.ghost{background:transparent}.btn:disabled{opacity:.5;cursor:not-allowed}
+    .statusline{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}.dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block}.dot.off{background:var(--amber)}
+    .view{display:none}.view.active{display:block}.grid{display:grid;gap:14px}.stats{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:14px}.stat,.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:17px;box-shadow:var(--shadow);min-width:0}.stat .label{color:var(--muted);font-size:11px}.stat .value{font-size:23px;font-weight:900;margin:8px 0 3px;direction:ltr;text-align:right;white-space:nowrap}.stat .hint{color:var(--muted);font-size:10px}.two{grid-template-columns:1.25fr .75fr}.three{grid-template-columns:repeat(3,minmax(0,1fr))}.card h3{font-size:14px;margin:0 0 14px}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}.card-head h3{margin:0}.pill{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:99px;background:var(--panel2);color:var(--muted);font-size:10px}.pill.good{color:var(--green);background:#16c78416}.pill.bad{color:var(--red);background:#ff657716}.pill.warn{color:var(--amber);background:#f4b74016}.chart-wrap{height:245px;position:relative}.chart-wrap canvas{width:100%;height:100%}.readiness-row{display:flex;justify-content:space-between;align-items:center;gap:10px}.range-row{margin:13px 0}.range-row label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-bottom:7px}.range-row input{width:100%;accent-color:var(--green)}.advice{font-size:12px;padding:10px 12px;border-radius:11px;background:var(--panel2);margin-top:10px;line-height:1.8}
+    .field{display:grid;gap:6px;margin-bottom:12px}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:11px;padding:10px 12px;outline:none;font-size:12px;min-width:0}input:focus,select:focus,textarea:focus{border-color:var(--green)}textarea{resize:vertical;min-height:75px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}.form-actions{display:flex;gap:8px;flex-wrap:wrap}.filters{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.filter{border:1px solid var(--line);border-radius:99px;padding:7px 11px;background:var(--panel2);color:var(--muted);font-size:11px}.filter.active{border-color:var(--green);color:var(--green);background:#16c78414}
+    .trade-list{display:grid;gap:9px}.trade{border:1px solid var(--line);border-radius:14px;background:var(--panel2);padding:13px}.trade-top,.trade-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px}.trade-top strong{font-size:13px}.trade-meta{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.trade-bottom{border-top:1px solid var(--line);padding-top:9px}.trade-bottom .muted{font-size:10px}.trade-actions{display:flex;gap:6px}.trade-actions button{font-size:10px;padding:6px 9px}.empty{padding:28px;text-align:center;color:var(--muted);font-size:12px}
+    .metric-row{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:12px}.metric-row:last-child{border:0}.bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:7px}.bar>i{display:block;height:100%;background:var(--green);border-radius:99px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:540px;font-size:11px}th,td{padding:10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th{color:var(--muted);font-weight:600}
+    .breath{display:grid;place-items:center;padding:12px}.breath-circle{width:145px;height:145px;border-radius:50%;border:2px solid var(--green);background:radial-gradient(circle,#16c78433,#58b5f711);display:grid;place-content:center;text-align:center;transition:transform 1s ease}.breath-circle.expand{transform:scale(1.15)}.breath-circle.contract{transform:scale(.88)}.breath-circle b{font-size:15px}.breath-circle span{font-size:22px;font-weight:900;direction:ltr}.rules{display:grid;gap:7px}.rule{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:9px 11px;font-size:11px}.toast{position:fixed;z-index:200;bottom:92px;left:50%;transform:translateX(-50%);background:#101b2b;color:#fff;padding:11px 16px;border-radius:99px;font-size:12px;box-shadow:var(--shadow);max-width:90vw;text-align:center}
+    .modal{position:fixed;inset:0;background:#0009;z-index:120;display:none;place-items:center;padding:15px}.modal.open{display:grid}.modal-box{width:min(100%,600px);max-height:90vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:20px}.modal-box h3{margin:0 0 14px;font-size:15px}.notice{padding:11px 13px;border-radius:12px;background:#58b5f711;border:1px solid #58b5f733;color:var(--muted);font-size:11px;line-height:1.9;margin:10px 0}.notice.warn{background:#f4b74010;border-color:#f4b74044}.mobile-nav{display:none}
+    @media(max-width:1100px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}.two{grid-template-columns:1fr}.app{grid-template-columns:205px minmax(0,1fr)}}
+    @media(max-width:760px){body{padding-bottom:78px}.app{display:block;padding:10px 10px 24px}.sidebar{display:none}.topbar{padding:11px 12px;margin-bottom:12px}.topbar h2{font-size:15px}.topbar p{display:none}.actions .wide{display:none}.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.stat{padding:13px}.stat .value{font-size:20px}.card{padding:14px}.three{grid-template-columns:1fr}.mobile-nav{position:fixed;z-index:80;bottom:0;left:0;right:0;display:grid;grid-template-columns:repeat(5,1fr);background:var(--panel);border-top:1px solid var(--line);padding:7px 4px calc(7px + env(safe-area-inset-bottom));backdrop-filter:blur(16px)}.mobile-nav button{border:0;background:none;color:var(--muted);font-size:9px;display:grid;gap:3px;place-items:center;padding:4px 0}.mobile-nav button b{font-size:17px}.mobile-nav button.active{color:var(--green)}.form-grid{grid-template-columns:1fr}.chart-wrap{height:205px}.topbar .statusline{display:none}.trade-top{align-items:flex-start}.trade-bottom{align-items:flex-start}.trade-actions{flex-wrap:wrap}.login-card{padding:22px}}
   </style>
 </head>
 <body>
-  <!-- Lock Screen -->
-  <div id="lockScreen" class="lock-overlay">
-    <div class="lock-card">
-      <div class="lock-logo">ZT</div>
-      <h2 style="text-align:center; margin:0 0 6px; font-size:18px;">ورود امن به ذهن تریدر</h2>
-      <p style="text-align:center; margin:0 0 18px; font-size:12px; color:var(--text-muted); line-height:1.6;">
-        برای دسترسی به ژورنال معاملاتی و وضعیت روانی، وارد شوید.
-      </p>
-
-      <form id="loginForm" onsubmit="handleLoginSubmit(event)">
-        <div class="field">
-          <label for="loginUser">نام کاربری</label>
-          <input id="loginUser" type="text" autocomplete="username" placeholder="behnam" required />
+  <div id="loginWrap" class="login-wrap">
+    <div class="login-card">
+      <div class="logo">ZT</div>
+      <h1 id="loginTitle">ورود به ذهن تریدر</h1>
+      <p id="loginHint">اطلاعات ژورنال روی همین دستگاه و به‌صورت رمزگذاری‌شده نگهداری می‌شود. برای شروع یک رمز عبور قوی تعیین کن.</p>
+      <form id="loginForm">
+        <div class="field"><label for="password">رمز عبور</label><input id="password" type="password" minlength="8" autocomplete="current-password" placeholder="حداقل ۸ کاراکتر" required></div>
+        <div class="field" id="confirmField"><label for="confirmPassword">تکرار رمز عبور</label><input id="confirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="تکرار رمز عبور"></div>
+        <div class="field" id="rememberField" style="margin:4px 0 12px">
+          <label style="display:flex;align-items:center;gap:8px;color:var(--muted)"><input id="rememberSession" type="checkbox" checked style="width:auto"> این نشست را تا ۱۰ دقیقه عدم فعالیت باز نگه دار</label>
         </div>
-        <div class="field">
-          <label for="loginPass">رمز عبور</label>
-          <input id="loginPass" type="password" autocomplete="current-password" placeholder="1234" required />
-        </div>
-        <div id="loginError" style="color:var(--danger); font-size:12px; margin-bottom:10px; min-height:18px;"></div>
-
-        <button type="submit" class="btn btn-primary" style="width:100%; margin-bottom:10px;">
-          ورود به ژورنال
-        </button>
+        <div id="loginError" class="small negative" style="min-height:18px;margin-bottom:8px"></div>
+        <button class="btn primary" id="loginSubmit" type="submit" style="width:100%;padding:12px">ساخت فضای امن</button>
       </form>
-
-      <button id="biometricLoginBtn" type="button" class="btn btn-ghost" style="width:100%; margin-bottom:12px;" onclick="unlockWithBiometric()">
-        ورود با اثر انگشت / بیومتریک
-      </button>
-
-      <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); border-top:1px solid var(--border-color); padding-top:10px;">
-        <span>کاربر پیش‌فرض: <strong>behnam</strong></span>
-        <span>رمز پیش‌فرض: <strong>1234</strong></span>
+      <button class="btn" id="passkeyLogin" type="button" style="width:100%;margin-top:9px;display:none">⌁ ورود با اثر انگشت / Passkey دستگاه</button>
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:13px;flex-wrap:wrap">
+        <label class="btn ghost" for="restoreFile">بازیابی پشتیبان رمزگذاری‌شده</label><input id="restoreFile" type="file" accept="application/json,.json" class="hidden">
+        <span class="small muted" id="cryptoStatus">بررسی امنیت مرورگر…</span>
       </div>
     </div>
   </div>
 
-  <!-- Main App -->
-  <div id="mainApp" class="app-shell hidden">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-icon">ZT</div>
-        <div>
-          <div class="brand-title">ذهن تریدر <span class="badge badge-info">MT5 Sync</span></div>
-          <div class="brand-sub" id="syncStatusText">آماده همگام‌سازی</div>
+  <div id="appRoot" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><div class="logo">ZT</div><div><b>ذهن تریدر</b><span>نسخه 2.1 · ژورنال هوشمند</span></div></div>
+      <nav class="nav" id="sideNav">
+        <button class="active" data-view="dashboard"><span class="ico">▦</span>داشبورد</button>
+        <button data-view="trades"><span class="ico">⇄</span>ژورنال معاملات</button>
+        <button data-view="psychology"><span class="ico">◉</span>کنترل روان</button>
+        <button data-view="reports"><span class="ico">▤</span>گزارش‌ها و تحلیل</button>
+        <button data-view="settings"><span class="ico">⚙</span>اتصال و تنظیمات</button>
+      </nav>
+      <div class="side-foot">اطلاعات محلی رمزگذاری می‌شود.<br>برای انتقال بین دستگاه‌ها از پشتیبان رمزگذاری‌شده استفاده کن.</div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><h2 id="pageTitle">داشبورد عملکرد</h2><p id="todayText">خلاصه وضعیت معاملاتی و آمادگی ذهنی</p></div>
+        <div class="actions">
+          <span class="statusline"><i id="syncDot" class="dot off"></i><span id="syncStatus">همگام‌سازی انجام نشده</span></span>
+          <button class="icon-btn wide" title="همگام‌سازی" id="syncBtn">↻</button>
+          <button class="icon-btn wide" title="پشتیبان رمزگذاری‌شده" id="backupBtn">⬇</button>
+          <button class="icon-btn" title="تغییر پوسته" id="themeBtn">☼</button>
+          <button class="icon-btn" title="قفل برنامه" id="lockBtn">🔒</button>
         </div>
-      </div>
-      <div class="top-actions">
-        <button type="button" id="syncTopBtn" class="icon-btn" title="همگام‌سازی گوگل شیت" onclick="syncFromSheet()">↻</button>
-        <button type="button" class="icon-btn" title="خروجی JSON" onclick="exportJSON()">⬇</button>
-        <button type="button" class="icon-btn" title="تغییر پوسته" onclick="toggleTheme()">☀</button>
-        <button type="button" class="icon-btn" title="قفل برنامه" onclick="lockApp()">🔒</button>
-      </div>
-    </header>
+      </header>
 
-    <!-- Pending Psychology Banner -->
-    <div id="pendingBanner" class="alert-banner hidden">
-      <div>
-        <strong style="font-size:13px;">معامله دریافت‌شده از MT5 منتظر تکمیل روانشناسی است</strong>
-        <div id="pendingBannerDesc" style="font-size:12px; color:var(--text-muted); margin-top:2px;"></div>
-      </div>
-      <button type="button" class="btn btn-warn btn-sm" onclick="openNextPendingPsych()">مشاهده و تکمیل سریع</button>
-    </div>
-
-    <!-- TAB 1: DASHBOARD -->
-    <section id="tab-dashboard" class="tab-view">
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-label">نرخ برد (Win Rate)</div>
-          <div id="statWinRate" class="stat-val">0%</div>
-          <div id="statWinLoss" class="stat-sub">0 برد / 0 باخت</div>
+      <section class="view active" id="view-dashboard">
+        <div class="grid stats">
+          <div class="stat"><div class="label">نرخ برد</div><div class="value" id="sWin">0%</div><div class="hint" id="sWinSub">۰ برد / ۰ باخت</div></div>
+          <div class="stat"><div class="label">سود و زیان خالص</div><div class="value" id="sNet">$0.00</div><div class="hint">بر اساس معاملات واردشده</div></div>
+          <div class="stat"><div class="label">Profit Factor</div><div class="value" id="sPf">0.00</div><div class="hint">سود ناخالص ÷ زیان ناخالص</div></div>
+          <div class="stat"><div class="label">امید ریاضی هر معامله</div><div class="value" id="sExp">$0.00</div><div class="hint">میانگین سود/زیان هر معامله</div></div>
+          <div class="stat"><div class="label">حداکثر افت سرمایه</div><div class="value" id="sDd">$0.00</div><div class="hint">Max Drawdown از منحنی تجمعی</div></div>
         </div>
-        <div class="stat-box">
-          <div class="stat-label">سود / زیان خالص ($)</div>
-          <div id="statNetPnl" class="stat-val">$0.00</div>
-          <div id="statTotalTrades" class="stat-sub">بر اساس 0 معامله ثبت‌شده</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">معاملات بدون خطای روانی</div>
-          <div id="statCleanRate" class="stat-val">0%</div>
-          <div id="statPsychAvg" class="stat-sub">میانگین امتیاز روان: 0/100</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">فاکتور سود (Profit Factor)</div>
-          <div id="statPF" class="stat-val">0.00</div>
-          <div class="stat-sub">نسبت مجموع سود به مجموع زیان</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3 class="card-title">
-          <span>سنجش آمادگی ذهنی قبل از ترید</span>
-          <span id="readinessBadge" class="badge badge-ok">آمادگی: 100%</span>
-        </h3>
-
-        <div class="field">
-          <label>کیفیت خواب و انرژی جسمی: <strong id="valSleep">4</strong> / 5</label>
-          <input id="rngSleep" type="range" min="1" max="5" value="4" oninput="updateReadiness()" />
-        </div>
-
-        <div class="field">
-          <label>تمرکز ذهنی و آرامش محیط: <strong id="valFocus">4</strong> / 5</label>
-          <input id="rngFocus" type="range" min="1" max="5" value="4" oninput="updateReadiness()" />
-        </div>
-
-        <div class="field">
-          <label>پایبندی و آمادگی اجرای پلن: <strong id="valPlan">5</strong> / 5</label>
-          <input id="rngPlan" type="range" min="1" max="5" value="5" oninput="updateReadiness()" />
-        </div>
-
-        <div id="readinessAdvice" class="badge badge-ok" style="margin-top:6px;">وضعیت ذهنی مطلوب برای شروع جلسه معاملاتی</div>
-      </div>
-
-      <div class="card">
-        <h3 class="card-title">نمودار سود/زیان و وضعیت روانی معاملات</h3>
-        <canvas id="pnlChart" height="190"></canvas>
-      </div>
-    </section>
-
-    <!-- TAB 2: ADD TRADE -->
-    <section id="tab-add" class="tab-view hidden">
-      <div class="card">
-        <h3 class="card-title">ثبت دستی معامله و وضعیت روانشناسی</h3>
-        <form id="manualTradeForm" onsubmit="saveManualTrade(event)">
-          <div class="form-grid two-col">
-            <div class="field">
-              <label for="mSymbol">نماد معاملاتی</label>
-              <input id="mSymbol" type="text" value="XAUUSD" required />
-            </div>
-            <div class="field">
-              <label for="mSide">جهت معامله</label>
-              <select id="mSide">
-                <option value="Buy">Buy (خرید)</option>
-                <option value="Sell">Sell (فروش)</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="mLots">حجم (Lot)</label>
-              <input id="mLots" type="number" step="0.01" value="0.05" required />
-            </div>
-            <div class="field">
-              <label for="mPnl">سود یا زیان دلاری ($)</label>
-              <input id="mPnl" type="number" step="0.01" placeholder="مثلاً 25 یا -15" required />
-            </div>
-          </div>
-
-          <div class="form-grid two-col">
-            <div class="field">
-              <label for="mEmotion">احساس غالب حین معامله</label>
-              <select id="mEmotion">
-                <option value="آرام و منضبط">آرام و منضبط</option>
-                <option value="FOMO / عجله">FOMO / عجله</option>
-                <option value="انتقامی / خشم">انتقامی / خشم</option>
-                <option value="ترس / تردید">ترس / تردید</option>
-                <option value="طمع / زیاده‌روی">طمع / زیاده‌روی</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="mRule">رعایت پلن و حد ضرر</label>
-              <select id="mRule">
-                <option value="کاملاً رعایت شد">کاملاً رعایت شد</option>
-                <option value="خطای جزئی">خطای جزئی</option>
-                <option value="نقض حد ضرر یا حجم">نقض حد ضرر یا حجم</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="mNotes">یادداشت روانشناختی و تحلیلی</label>
-            <textarea id="mNotes" rows="3" placeholder="چرا وارد شدم؟ چه حسی داشتم؟"></textarea>
-          </div>
-
-          <button type="submit" class="btn btn-primary" style="width:100%;">ثبت معامله در ژورنال</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- TAB 3: HISTORY -->
-    <section id="tab-history" class="tab-view hidden">
-      <div class="card">
-        <div class="card-title">
-          <span>تاریخچه ژورنال معاملات</span>
-          <button type="button" class="btn btn-danger btn-sm" onclick="clearAllTrades()">حذف همه معاملات</button>
-        </div>
-
-        <div class="field">
-          <input id="searchSymbolInput" type="text" placeholder="جستجوی نماد (مثلاً XAUUSD یا BTCUSD)..." oninput="renderTrades()" />
-        </div>
-
-        <div class="chip-group" id="filterChips">
-          <button type="button" class="chip active" data-filter="all" onclick="setFilter('all', this)">همه معاملات</button>
-          <button type="button" class="chip" data-filter="pending" onclick="setFilter('pending', this)">نیاز به تکمیل روانشناسی</button>
-          <button type="button" class="chip" data-filter="win" onclick="setFilter('win', this)">سودده</button>
-          <button type="button" class="chip" data-filter="loss" onclick="setFilter('loss', this)">زیان‌ده</button>
-          <button type="button" class="chip" data-filter="mistake" onclick="setFilter('mistake', this)">دارای خطای روانی</button>
-        </div>
-
-        <div id="tradesList"></div>
-      </div>
-    </section>
-
-    <!-- TAB 4: MIND CONTROL -->
-    <section id="tab-mind" class="tab-view hidden">
-      <div class="card">
-        <h3 class="card-title">تنفس جعبه‌ای (۴-۴-۴-۴) برای کاهش استرس</h3>
-        <div class="breath-box">
-          <div id="breathCircle" class="breath-circle">
-            <div id="breathPhase" style="font-size:15px; font-weight:800;">آماده</div>
-            <div id="breathSec" style="font-size:22px; font-weight:800; direction:ltr;">4s</div>
-          </div>
-          <div class="btn-row" style="justify-content:center;">
-            <button type="button" id="breathToggleBtn" class="btn btn-primary btn-sm" onclick="toggleBreathing()">شروع تنفس</button>
+        <div class="grid two">
+          <div class="card"><div class="card-head"><h3>منحنی تجمعی سود و زیان</h3><span class="pill">بر اساس ترتیب زمانی</span></div><div class="chart-wrap"><canvas id="equityChart"></canvas></div></div>
+          <div class="card"><div class="card-head"><h3>آمادگی ذهنی پیش از معامله</h3><span class="pill good" id="readyBadge">آمادگی 87%</span></div>
+            <div class="range-row"><label>خواب و انرژی <b id="sleepVal">4/5</b></label><input id="sleepRange" type="range" min="1" max="5" value="4"></div>
+            <div class="range-row"><label>تمرکز و آرامش <b id="focusVal">4/5</b></label><input id="focusRange" type="range" min="1" max="5" value="4"></div>
+            <div class="range-row"><label>پایبندی به پلن <b id="planVal">5/5</b></label><input id="planRange" type="range" min="1" max="5" value="5"></div>
+            <div class="advice" id="readyAdvice">آمادگی مناسب؛ پیش از ورود، حد ضرر و ریسک را دوباره بررسی کن.</div>
           </div>
         </div>
-      </div>
+        <div class="grid two" style="margin-top:14px">
+          <div class="card"><div class="card-head"><h3>آخرین معاملات</h3><button class="btn ghost" data-goto="trades">مشاهده همه</button></div><div id="recentTrades" class="trade-list"></div></div>
+          <div class="card"><div class="card-head"><h3>وضعیت تکمیل روان‌شناسی</h3><span class="pill warn" id="pendingPill">۰ معامله منتظر</span></div><div id="psychProgress"></div><button class="btn warn" id="openPendingBtn" style="margin-top:12px">تکمیل معامله بعدی</button></div>
+        </div>
+      </section>
 
-      <div class="card">
-        <h3 class="card-title">قفل ضد معامله انتقامی (Tilt Lock)</h3>
-        <p style="font-size:12.5px; color:var(--text-muted); margin-top:0;">
-          پس از ضرر یا هیجان بالا، یک وقفه اجباری فعال کنید تا از تصمیم‌های احساسی جلوگیری شود.
-        </p>
-        <div id="tiltTimerDisplay" class="timer-display">00:00</div>
-        <div class="btn-row">
-          <button type="button" class="btn btn-warn btn-sm" onclick="startTiltLock(15)">قفل ۱۵ دقیقه‌ای</button>
-          <button type="button" class="btn btn-danger btn-sm" onclick="startTiltLock(30)">قفل ۳۰ دقیقه‌ای</button>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="stopTiltLock()">لغو قفل</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3 class="card-title">قوانین شخصی ترید</h3>
-        <div class="field" style="display:flex; gap:8px; flex-direction:row;">
-          <input id="newRuleInput" type="text" placeholder="قانون جدید (مثلاً: پس از ۲ باخت متوالی توقف)" />
-          <button type="button" class="btn btn-primary btn-sm" onclick="addPersonalRule()">افزودن</button>
-        </div>
-        <div id="rulesContainer"></div>
-      </div>
-    </section>
-
-    <!-- TAB 5: MT5 & SECURITY SETTINGS -->
-    <section id="tab-mt5" class="tab-view hidden">
-      <div class="card">
-        <h3 class="card-title">اتصال خودکار به گوگل شیت (متاتریدر ۵)</h3>
-        <div class="field">
-          <label for="gasUrlInput">لینک وب‌اپ Google Apps Script (/exec)</label>
-          <input id="gasUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
-        </div>
-        <div class="field">
-          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--text-main);">
-            <input id="autoSyncChk" type="checkbox" style="width:auto;" />
-            <span>همگام‌سازی خودکار پس از ورود به برنامه</span>
-          </label>
-        </div>
-        <div class="btn-row">
-          <button type="button" class="btn btn-primary" onclick="saveMt5Settings()">ذخیره تنظیمات</button>
-          <button type="button" class="btn btn-ghost" onclick="syncFromSheet()">همگام‌سازی الان</button>
-          <button type="button" class="btn btn-ghost" onclick="exportCSV()">خروجی CSV</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3 class="card-title">امنیت، رمز عبور و اثر انگشت</h3>
-        <div class="form-grid two-col">
-          <div class="field">
-            <label for="secUserInput">نام کاربری</label>
-            <input id="secUserInput" type="text" />
+      <section class="view" id="view-trades">
+        <div class="grid two">
+          <div class="card"><div class="card-head"><h3>ثبت دستی معامله</h3><span class="pill">Manual Entry</span></div>
+            <form id="tradeForm">
+              <div class="form-grid">
+                <div class="field"><label>نماد</label><input id="fSymbol" value="XAUUSD" required></div>
+                <div class="field"><label>جهت</label><select id="fSide"><option value="Buy">Buy / خرید</option><option value="Sell">Sell / فروش</option></select></div>
+                <div class="field"><label>حجم (Lot)</label><input id="fLots" type="number" min="0.00001" step="any" value="0.05" required></div>
+                <div class="field"><label>سود/زیان خالص ($)</label><input id="fPnl" type="number" step="any" placeholder="مثلاً 25 یا -15" required></div>
+                <div class="field"><label>تاریخ و زمان بسته‌شدن</label><input id="fDate" type="datetime-local"></div>
+                <div class="field"><label>قیمت ورود (اختیاری)</label><input id="fEntry" type="number" step="any"></div>
+              </div>
+              <div class="field"><label>یادداشت کوتاه</label><textarea id="fNotes" placeholder="دلیل ورود، کیفیت ستاپ، نکته قابل یادگیری..."></textarea></div>
+              <button class="btn primary" type="submit">ثبت معامله</button>
+            </form>
           </div>
-          <div class="field">
-            <label for="secPassInput">رمز عبور جدید</label>
-            <input id="secPassInput" type="password" placeholder="حداقل ۴ کاراکتر" />
+          <div class="card"><div class="card-head"><h3>راهنمای ورود معاملات MT5</h3><span class="pill">Google Sheets</span></div>
+            <p class="small muted" style="line-height:2">معاملات بسته‌شده از شیت Journal دریافت می‌شوند. شناسه تیکت/Deal برای جلوگیری از ثبت تکراری استفاده می‌شود. اطلاعات روان‌شناسی در این برنامه نگهداری می‌شود و هنگام همگام‌سازی، بازنویسی نخواهد شد.</p>
+            <div class="notice">اگر شیت شما ستون شناسه یکتا ندارد، برنامه از ترکیب نماد، جهت، حجم، زمان و سود برای تشخیص معامله استفاده می‌کند؛ وجود Ticket یا Deal ID مطمئن‌تر است.</div>
+            <button class="btn" data-goto="settings">تنظیم اتصال Google Sheets</button>
           </div>
         </div>
-        <div class="btn-row" style="margin-bottom:12px;">
-          <button type="button" class="btn btn-primary btn-sm" onclick="updateCredentials()">ذخیره نام کاربری و رمز</button>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="registerBiometric()">ثبت اثر انگشت در این دستگاه</button>
+        <div class="card" style="margin-top:14px"><div class="card-head"><h3>تاریخچه معاملات</h3><span class="pill" id="tradeCountPill">۰ معامله</span></div>
+          <div class="form-grid"><div class="field"><label>جستجوی نماد یا شناسه</label><input id="tradeSearch" placeholder="XAUUSD، BTCUSD یا Ticket..."></div><div class="field"><label>مرتب‌سازی</label><select id="tradeSort"><option value="new">جدیدترین ابتدا</option><option value="old">قدیمی‌ترین ابتدا</option><option value="profit">بیشترین سود</option><option value="loss">بیشترین زیان</option></select></div></div>
+          <div class="filters" id="tradeFilters"><button class="filter active" data-filter="all">همه</button><button class="filter" data-filter="pending">نیازمند روان‌شناسی</button><button class="filter" data-filter="win">سودده</button><button class="filter" data-filter="loss">زیان‌ده</button><button class="filter" data-filter="mistake">دارای خطا</button><button class="filter" data-filter="mt5">فقط MT5</button></div>
+          <div id="tradeList" class="trade-list"></div>
         </div>
-        <div id="bioStatusText" style="font-size:12px; color:var(--text-muted);"></div>
-      </div>
+      </section>
 
-      <div class="card">
-        <h3 class="card-title">کد doGet برای دریافت معاملات از شیت Journal</h3>
-        <p style="font-size:12px; color:var(--text-muted); margin-top:0;">
-          در صورت نیاز به بررسی یا به‌روزرسانی تابع خواندن اطلاعات در Apps Script:
-        </p>
-        <code class="block-code">function doGet(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Journal");
-  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "error", trades: [] })).setMimeType(ContentService.MimeType.JSON);
-  var rows = sheet.getDataRange().getValues();
-  if (rows.length &lt;= 1) return ContentService.createTextOutput(JSON.stringify({ status: "success", trades: [] })).setMimeType(ContentService.MimeType.JSON);
-  var headers = rows[0];
-  var trades = [];
-  for (var i = 1; i &lt; rows.length; i++) {
-    var obj = {};
-    for (var j = 0; j &lt; headers.length; j++) obj[String(headers[j]).trim()] = rows[i][j];
-    trades.push(obj);
-  }
-  return ContentService.createTextOutput(JSON.stringify({ status: "success", trades: trades })).setMimeType(ContentService.MimeType.JSON);
-}</code>
-      </div>
-    </section>
+      <section class="view" id="view-psychology">
+        <div class="grid two">
+          <div class="card"><div class="card-head"><h3>تمرین تنفس جعبه‌ای ۴-۴-۴-۴</h3><span class="pill">تنظیم هیجان</span></div><div class="breath"><div id="breathCircle" class="breath-circle"><b id="breathPhase">آماده</b><span id="breathSeconds">4s</span></div></div><div class="form-actions" style="justify-content:center"><button class="btn primary" id="breathStart">شروع تنفس</button><button class="btn" id="breathStop">توقف</button></div><p class="small muted" style="text-align:center;line-height:1.8">دم، نگه‌داشتن، بازدم و مکث؛ هر مرحله ۴ ثانیه.</p></div>
+          <div class="card"><div class="card-head"><h3>قفل ضد معامله انتقامی</h3><span class="pill warn">Tilt Lock</span></div><p class="small muted" style="line-height:1.9">پس از ضرر یا افزایش هیجان، وقفه ایجاد کن. پایان قفل بر اساس ساعت دستگاه ذخیره می‌شود و با بستن صفحه از بین نمی‌رود.</p><div id="tiltDisplay" style="font-size:34px;font-weight:900;text-align:center;direction:ltr;margin:18px 0">00:00</div><div class="form-actions"><button class="btn warn" data-tilt="15">قفل ۱۵ دقیقه</button><button class="btn danger" data-tilt="30">قفل ۳۰ دقیقه</button><button class="btn" id="tiltStop">لغو قفل</button></div></div>
+        </div>
+        <div class="grid two" style="margin-top:14px">
+          <div class="card"><div class="card-head"><h3>قوانین شخصی معامله‌گری</h3><span class="pill">Discipline</span></div><div class="field"><label>قانون جدید</label><div style="display:flex;gap:7px"><input id="newRule" placeholder="مثلاً پس از دو باخت متوالی توقف"><button class="btn primary" id="addRule">افزودن</button></div></div><div class="rules" id="rulesList"></div></div>
+          <div class="card"><div class="card-head"><h3>خلاصه رفتار معاملاتی</h3><span class="pill">از معاملات تکمیل‌شده</span></div><div id="behaviorSummary"></div></div>
+        </div>
+        <div class="card" style="margin-top:14px"><div class="card-head"><h3>دستیار تحلیلی ذهن تریدر</h3><span class="pill good">تحلیل خودکار رفتار</span></div><div id="smartInsights"></div><div class="notice">این دستیار از آمار و برچسب‌هایی که ثبت می‌کنی بینش توصیفی می‌سازد؛ رابطه آماری به‌تنهایی علت و معلول را ثابت نمی‌کند.</div></div>
+      </section>
+
+      <section class="view" id="view-reports">
+        <div class="card"><div class="card-head"><h3>گزارش عملکرد</h3><span class="pill">Performance Analytics</span></div>
+          <div class="form-grid"><div class="field"><label>بازه گزارش</label><select id="reportRange"><option value="7">۷ روز اخیر</option><option value="30" selected>۳۰ روز اخیر</option><option value="90">۹۰ روز اخیر</option><option value="all">تمام دوره</option></select></div><div class="field"><label>واحد نمایش</label><select id="reportCurrency"><option value="USD">USD</option></select></div></div>
+          <div class="grid stats" style="grid-template-columns:repeat(4,minmax(0,1fr))"><div class="stat"><div class="label">تعداد معاملات</div><div class="value" id="rCount">0</div></div><div class="stat"><div class="label">سود خالص</div><div class="value" id="rNet">$0</div></div><div class="stat"><div class="label">میانگین سود</div><div class="value" id="rAvg">$0</div></div><div class="stat"><div class="label">درصد پایبندی</div><div class="value" id="rDiscipline">0%</div></div></div>
+        </div>
+        <div class="grid two" style="margin-top:14px"><div class="card"><h3>مقایسه معاملات منضبط و دارای خطا</h3><div id="disciplineCompare"></div></div><div class="card"><h3>عملکرد بر اساس احساس غالب</h3><div id="emotionBreakdown"></div></div></div>
+        <div class="card" style="margin-top:14px"><div class="card-head"><h3>خلاصه نمادها</h3><button class="btn" id="csvBtn">خروجی CSV</button></div><div class="table-wrap"><table><thead><tr><th>نماد</th><th>تعداد</th><th>برد</th><th>نرخ برد</th><th>سود خالص</th><th>میانگین</th></tr></thead><tbody id="symbolTable"></tbody></table></div></div>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="grid two">
+          <div class="card"><div class="card-head"><h3>اتصال Google Sheets</h3><span class="pill">MT5 → Sheets → ذهن تریدر</span></div>
+            <div class="field"><label>آدرس وب‌اپ Apps Script با انتهای /exec</label><input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" dir="ltr"></div>
+            <div class="field"><label>کلید دسترسی API</label><input id="apiToken" type="password" placeholder="کلید تنظیم‌شده در Script Properties" dir="ltr"></div>
+            <div class="field"><label style="display:flex;align-items:center;gap:8px"><input id="autoSync" type="checkbox" style="width:auto"> همگام‌سازی خودکار هنگام ورود</label></div>
+            <div class="field"><label>نام شیت معاملات</label><input id="sheetName" value="Journal"></div>
+            <div class="form-actions"><button class="btn primary" id="saveSettings">ذخیره تنظیمات</button><button class="btn" id="syncNow">همگام‌سازی اکنون</button></div>
+            <div class="notice warn">اتصال خارجی از روش JSONP برای خواندن استفاده می‌کند. کلید دسترسی را محرمانه نگه دار؛ هر فردی که هم URL و هم کلید را داشته باشد می‌تواند داده‌های قابل‌خواندن شیت را دریافت کند.</div>
+          </div>
+          <div class="card"><div class="card-head"><h3>پشتیبان و انتقال بین دستگاه‌ها</h3><span class="pill good">رمزگذاری‌شده</span></div>
+            <p class="small muted" style="line-height:2">اطلاعات روان‌شناسی و معاملات دستی در فضای امن همین مرورگر ذخیره می‌شود. برای انتقال کامل به موبایل یا کامپیوتر دیگر، پشتیبان رمزگذاری‌شده بگیر و با همان رمز عبور در دستگاه مقصد بازیابی کن.</p>
+            <div class="form-actions"><button class="btn primary" id="settingsBackup">دانلود پشتیبان امن</button><label class="btn" for="settingsRestore">بازیابی پشتیبان</label><input id="settingsRestore" type="file" accept="application/json,.json" class="hidden"></div>
+            <div class="notice">معاملات MT5 از شیت دوباره قابل دریافت هستند؛ یادداشت‌های روان‌شناسی در فایل پشتیبان نگهداری می‌شوند. نسخه فعلی اطلاعات روان‌شناسی را به Google Sheets نمی‌نویسد.</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <div class="card-head"><h3>ورود سریع و امنیت نشست</h3><span class="pill good">Passkey / WebAuthn</span></div>
+          <p class="small muted" style="line-height:2">می‌توانی ورود با اثر انگشت، تشخیص چهره یا PIN امن دستگاه را فعال کنی. کلید رمزگذاری فضای ژورنال با قابلیت PRF در Passkey محافظت می‌شود؛ خود اثر انگشت از دستگاه خارج نمی‌شود. این قابلیت به HTTPS و پشتیبانی مرورگر و احرازگر دستگاه از PRF نیاز دارد.</p>
+          <div class="metric-row"><span>قفل خودکار پس از عدم فعالیت</span><b>۱۰ دقیقه</b></div>
+          <div class="metric-row"><span>وضعیت ورود بیومتریک</span><b id="passkeyStatus">در حال بررسی…</b></div>
+          <div class="form-actions" style="margin-top:12px"><button class="btn primary" id="registerPasskey" type="button">فعال‌سازی اثر انگشت / Passkey</button><button class="btn danger" id="removePasskey" type="button">حذف اتصال این دستگاه</button></div>
+          <div class="notice warn">پس از Refresh در همان تب، نشست باز می‌ماند؛ با بستن تب/مرورگر یا ۱۰ دقیقه عدم فعالیت، رمز یا Passkey لازم می‌شود. برای امنیت بیشتر، روی دستگاه مشترک گزینه قفل دستی را بزن.</div>
+        </div>
+        <div class="grid two" style="margin-top:14px">
+          <div class="card"><h3>امنیت فضای محلی</h3><p class="small muted" style="line-height:2">داده‌های ذخیره‌شده در مرورگر با AES-GCM و کلید مشتق‌شده از رمز عبور رمزگذاری می‌شوند. رمز عبور پیش‌فرض وجود ندارد. قفل برنامه فقط دسترسی رابط را می‌بندد و رمزگذاری فضای داده، لایه محافظ اصلی در حالت ذخیره محلی است.</p><button class="btn danger" id="wipeData">پاک‌کردن کامل داده‌های این دستگاه</button></div>
+          <div class="card"><h3>وضعیت برنامه</h3><div class="metric-row"><span>نسخه</span><b>2.1.0</b></div><div class="metric-row"><span>حالت ذخیره‌سازی</span><b>رمزگذاری‌شده و محلی</b></div><div class="metric-row"><span>اتصال به Sheets</span><b id="connectionState">تنظیم نشده</b></div><div class="metric-row"><span>آخرین همگام‌سازی</span><b id="lastSyncText">—</b></div></div>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <!-- Bottom Navigation -->
-  <nav id="bottomNav" class="bottom-nav hidden">
-    <button type="button" class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard', this)">
-      <span>📊</span>
-      <span>داشبورد</span>
-    </button>
-    <button type="button" class="nav-item" data-tab="add" onclick="switchTab('add', this)">
-      <span>➕</span>
-      <span>ثبت دستی</span>
-    </button>
-    <button type="button" class="nav-item" data-tab="history" onclick="switchTab('history', this)">
-      <span id="histDot" class="nav-dot hidden"></span>
-      <span>📜</span>
-      <span>تاریخچه</span>
-    </button>
-    <button type="button" class="nav-item" data-tab="mind" onclick="switchTab('mind', this)">
-      <span>🧘</span>
-      <span>کنترل روان</span>
-    </button>
-    <button type="button" class="nav-item" data-tab="mt5" onclick="switchTab('mt5', this)">
-      <span>🔄</span>
-      <span>اتصال MT5</span>
-    </button>
+  <nav class="mobile-nav" id="mobileNav">
+    <button class="active" data-view="dashboard"><b>▦</b>داشبورد</button><button data-view="trades"><b>⇄</b>معاملات</button><button data-view="psychology"><b>◉</b>کنترل روان</button><button data-view="reports"><b>▤</b>گزارش‌ها</button><button data-view="settings"><b>⚙</b>تنظیمات</button>
   </nav>
 
-  <!-- Psychology Completion Modal -->
-  <div id="psychModal" class="modal-backdrop" onclick="if(event.target===this)closePsychModal()">
-    <div class="modal-box">
-      <h3 style="margin:0 0 12px; font-size:16px;">تکمیل وضعیت روانشناسی معامله</h3>
-      <div id="psychTradeSummary" class="badge badge-info" style="margin-bottom:12px;"></div>
+  <div id="psychModal" class="modal"><div class="modal-box"><div class="card-head"><h3>تکمیل روان‌شناسی معامله</h3><button class="icon-btn" id="closePsych">✕</button></div><div id="psychSummary" class="pill" style="margin-bottom:13px"></div>
+    <form id="psychForm">
+      <div class="form-grid"><div class="field"><label>احساس غالب</label><select id="pEmotion"><option>آرام و منضبط</option><option>FOMO / عجله</option><option>انتقامی / خشم</option><option>ترس / تردید</option><option>طمع / زیاده‌روی</option><option>خستگی / بی‌حوصلگی</option></select></div><div class="field"><label>رعایت پلن و حد ضرر</label><select id="pRule"><option>کاملاً رعایت شد</option><option>خطای جزئی</option><option>نقض حد ضرر یا حجم</option><option>ورود خارج از پلن</option></select></div></div>
+      <div class="form-grid"><div class="field"><label>شدت استرس: <b id="stressValue">2/5</b></label><input id="pStress" type="range" min="1" max="5" value="2"></div><div class="field"><label>آیا بعد از ضرر قبلی وارد شدی؟</label><select id="pAfterLoss"><option value="no">خیر</option><option value="yes">بله</option></select></div></div>
+      <div class="field"><label>دلیل اصلی ورود</label><select id="pReason"><option>ستاپ مطابق پلن</option><option>شکست / پولبک</option><option>FOMO و ترس از جا ماندن</option><option>جبران ضرر قبلی</option><option>سیگنال یا توصیه دیگران</option><option>سایر</option></select></div>
+      <div class="field"><label>یادداشت و درس این معامله</label><textarea id="pNotes" placeholder="چه چیزی درست بود؟ چه چیزی باید اصلاح شود؟"></textarea></div>
+      <div class="form-actions"><button class="btn primary" type="submit">ذخیره روان‌شناسی</button><button class="btn" type="button" id="cancelPsych">انصراف</button></div>
+    </form>
+  </div></div>
+  <div id="toast" class="toast hidden"></div>
 
-      <div class="field">
-        <label for="pEmotion">احساس غالب حین معامله</label>
-        <select id="pEmotion">
-          <option value="آرام و منضبط">آرام و منضبط</option>
-          <option value="FOMO / عجله">FOMO / عجله</option>
-          <option value="انتقامی / خشم">انتقامی / خشم</option>
-          <option value="ترس / تردید">ترس / تردید</option>
-          <option value="طمع / زیاده‌روی">طمع / زیاده‌روی</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="pRule">رعایت پلن و حد ضرر</label>
-        <select id="pRule">
-          <option value="کاملاً رعایت شد">کاملاً رعایت شد</option>
-          <option value="خطای جزئی">خطای جزئی</option>
-          <option value="نقض حد ضرر یا حجم">نقض حد ضرر یا حجم</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="pNotes">یادداشت روانشناختی</label>
-        <textarea id="pNotes" rows="3" placeholder="توضیح کوتاه درباره ورود، خروج و حال روحی..."></textarea>
-      </div>
-
-      <div class="btn-row">
-        <button type="button" class="btn btn-primary" style="flex:1;" onclick="savePsychModal()">ذخیره وضعیت روان</button>
-        <button type="button" class="btn btn-ghost" onclick="closePsychModal()">بستن</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="toast" class="toast"></div>
-
-  <script>
-    const STORAGE_KEYS = {
-      AUTH: "zt_auth_v2",
-      TRADES: "zt_trades_v2",
-      SETTINGS: "zt_settings_v2",
-      RULES: "zt_rules_v2",
-      TILT_END: "zt_tilt_end_v2",
-      THEME: "zt_theme_v2"
-    };
-
-    const DEFAULT_AUTH = {
-      username: "behnam",
-      password: String(1234),
-      bioCredentialId: null
-    };
-
-    const DEFAULT_SETTINGS = {
-      gasUrl: "",
-      autoSync: true
-    };
-
-    const DEFAULT_RULES = [
-      "قبل از ورود، روند و فیلتر EMA 60 را بررسی می‌کنم.",
-      "هیچ‌گاه حجم را پس از ضرر برای جبران سریع دو برابر نمی‌کنم.",
-      "حد ضرر را دقیق و منطقی قرار می‌دهم و جابه‌جا نمی‌کنم."
-    ];
-
-    let state = {
-      unlocked: false,
-      auth: loadJson(STORAGE_KEYS.AUTH, DEFAULT_AUTH),
-      settings: loadJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS),
-      trades: loadJson(STORAGE_KEYS.TRADES, []),
-      rules: loadJson(STORAGE_KEYS.RULES, DEFAULT_RULES),
-      filter: "all",
-      editingTradeId: null,
-      pnlChart: null,
-      breathTimer: null,
-      tiltTimer: null
-    };
-
-    function loadJson(key, fallback) {
-      try {
-        const raw = localStorage.getItem(key);
-        if (!raw) return JSON.parse(JSON.stringify(fallback));
-        return Object.assign(JSON.parse(JSON.stringify(fallback)), JSON.parse(raw));
-      } catch (e) {
-        return JSON.parse(JSON.stringify(fallback));
-      }
-    }
-
-    function saveJson(key, value) {
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-      } catch (e) {}
-    }
-
-    function showToast(msg) {
-      const el = document.getElementById("toast");
-      el.textContent = msg;
-      el.style.display = "block";
-      clearTimeout(window._toastTimeout);
-      window._toastTimeout = setTimeout(() => {
-        el.style.display = "none";
-      }, 2800);
-    }
-
-    function normalizeDigits(str) {
-      const persian = "۰۱۲۳۴۵۶۷۸۹";
-      const arabic = "٠١٢٣٤٥٦٧٨٩";
-      return String(str || "")
-        .replace(/[۰-۹]/g, d => String(persian.indexOf(d)))
-        .replace(/[٠-٩]/g, d => String(arabic.indexOf(d)))
-        .trim();
-    }
-
-    /* Authentication */
-    function handleLoginSubmit(event) {
-      event.preventDefault();
-      const userInput = normalizeDigits(document.getElementById("loginUser").value).toLowerCase();
-      const passInput = normalizeDigits(document.getElementById("loginPass").value);
-      const errEl = document.getElementById("loginError");
-
-      const expectedUser = normalizeDigits(state.auth.username || "behnam").toLowerCase();
-      const expectedPass = normalizeDigits(state.auth.password || "1234");
-
-      if (userInput === expectedUser && passInput === expectedPass) {
-        errEl.textContent = "";
-        grantAccess();
-      } else {
-        errEl.textContent = "نام کاربری یا رمز عبور اشتباه است.";
-      }
-    }
-
-    function grantAccess() {
-      state.unlocked = true;
-      document.getElementById("lockScreen").classList.add("hidden");
-      document.getElementById("mainApp").classList.remove("hidden");
-      document.getElementById("bottomNav").classList.remove("hidden");
-      populateSettingsInputs();
-      renderAll();
-      if (state.settings.autoSync && state.settings.gasUrl) {
-        syncFromSheet(true);
-      }
-    }
-
-    function lockApp() {
-      state.unlocked = false;
-      document.getElementById("loginPass").value = "";
-      document.getElementById("loginError").textContent = "";
-      document.getElementById("mainApp").classList.add("hidden");
-      document.getElementById("bottomNav").classList.add("hidden");
-      document.getElementById("lockScreen").classList.remove("hidden");
-    }
-
-    function updateCredentials() {
-      const u = normalizeDigits(document.getElementById("secUserInput").value);
-      const p = normalizeDigits(document.getElementById("secPassInput").value);
-      if (!u) {
-        showToast("نام کاربری را وارد کنید.");
-        return;
-      }
-      state.auth.username = u;
-      if (p) {
-        if (p.length < 4) {
-          showToast("رمز عبور باید حداقل ۴ کاراکتر باشد.");
-          return;
-        }
-        state.auth.password = p;
-      }
-      saveJson(STORAGE_KEYS.AUTH, state.auth);
-      document.getElementById("secPassInput").value = "";
-      showToast("اطلاعات ورود ذخیره شد.");
-    }
-
-    /* WebAuthn Biometric */
-    function isBiometricAvailable() {
-      return Boolean(window.PublicKeyCredential && window.isSecureContext);
-    }
-
-    function b64ToBuf(b64) {
-      const bin = atob(b64);
-      const buf = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-      return buf;
-    }
-
-    function bufToB64(buf) {
-      const bytes = new Uint8Array(buf);
-      let bin = "";
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-      return btoa(bin);
-    }
-
-    async function registerBiometric() {
-      if (!isBiometricAvailable()) {
-        showToast("اثر انگشت در این مرورگر یا بستر پشتیبانی نمی‌شود.");
-        return;
-      }
-      try {
-        const challenge = new Uint8Array(32);
-        crypto.getRandomValues(challenge);
-        const userId = new Uint8Array(16);
-        crypto.getRandomValues(userId);
-
-        const cred = await navigator.credentials.create({
-          publicKey: {
-            challenge,
-            rp: { name: "ذهن تریدر" },
-            user: {
-              id: userId,
-              name: state.auth.username || "behnam",
-              displayName: state.auth.username || "behnam"
-            },
-            pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-            authenticatorSelection: { userVerification: "required" },
-            timeout: 60000
-          }
-        });
-
-        if (cred && cred.rawId) {
-          state.auth.bioCredentialId = bufToB64(cred.rawId);
-          saveJson(STORAGE_KEYS.AUTH, state.auth);
-          refreshBiometricStatus();
-          showToast("ورود با اثر انگشت ثبت شد.");
-        }
-      } catch (e) {
-        showToast("ثبت اثر انگشت لغو شد یا ناموفق بود.");
-      }
-    }
-
-    async function unlockWithBiometric() {
-      if (!isBiometricAvailable()) {
-        showToast("بیومتریک در این محیط در دسترس نیست.");
-        return;
-      }
-      if (!state.auth.bioCredentialId) {
-        showToast("ابتدا با رمز عبور وارد شوید و اثر انگشت را ثبت کنید.");
-        return;
-      }
-      try {
-        const challenge = new Uint8Array(32);
-        crypto.getRandomValues(challenge);
-        const assertion = await navigator.credentials.get({
-          publicKey: {
-            challenge,
-            allowCredentials: [{
-              type: "public-key",
-              id: b64ToBuf(state.auth.bioCredentialId)
-            }],
-            userVerification: "required",
-            timeout: 60000
-          }
-        });
-        if (assertion) {
-          grantAccess();
-          showToast("ورود بیومتریک موفق بود.");
-        }
-      } catch (e) {
-        showToast("احراز هویت بیومتریک انجام نشد.");
-      }
-    }
-
-    function refreshBiometricStatus() {
-      const el = document.getElementById("bioStatusText");
-      const btn = document.getElementById("biometricLoginBtn");
-      if (!isBiometricAvailable()) {
-        el.textContent = "وضعیت بیومتریک: در این مرورگر یا حالت غیرامن فعال نیست.";
-        btn.style.opacity = "0.7";
-        return;
-      }
-      if (state.auth.bioCredentialId) {
-        el.textContent = "وضعیت بیومتریک: اثر انگشت روی این دستگاه فعال است.";
-        btn.style.opacity = "1";
-      } else {
-        el.textContent = "وضعیت بیومتریک: هنوز اثر انگشتی ثبت نشده است.";
-        btn.style.opacity = "0.85";
-      }
-    }
-
-    /* Navigation & Theme */
-    function switchTab(tabName, btnEl) {
-      document.querySelectorAll(".tab-view").forEach(v => v.classList.add("hidden"));
-      const target = document.getElementById("tab-" + tabName);
-      if (target) target.classList.remove("hidden");
-
-      document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
-      if (btnEl) {
-        btnEl.classList.add("active");
-      } else {
-        const navBtn = document.querySelector('.nav-item[data-tab="' + tabName + '"]');
-        if (navBtn) navBtn.classList.add("active");
-      }
-
-      if (tabName === "dashboard") {
-        renderChart();
-      } else if (tabName === "history") {
-        renderTrades();
-      } else if (tabName === "mind") {
-        renderRules();
-      }
-    }
-
-    function toggleTheme() {
-      document.body.classList.toggle("light-mode");
-      const isLight = document.body.classList.contains("light-mode");
-      saveJson(STORAGE_KEYS.THEME, { light: isLight });
-      renderChart();
-    }
-
-    /* Readiness */
-    function updateReadiness() {
-      const s = Number(document.getElementById("rngSleep").value);
-      const f = Number(document.getElementById("rngFocus").value);
-      const p = Number(document.getElementById("rngPlan").value);
-
-      document.getElementById("valSleep").textContent = s;
-      document.getElementById("valFocus").textContent = f;
-      document.getElementById("valPlan").textContent = p;
-
-      const score = Math.round(((s + f + p) / 15) * 100);
-      const badge = document.getElementById("readinessBadge");
-      const advice = document.getElementById("readinessAdvice");
-      badge.textContent = "آمادگی: " + score + "%";
-
-      if (score >= 75) {
-        badge.className = "badge badge-ok";
-        advice.className = "badge badge-ok";
-        advice.textContent = "وضعیت ذهنی مطلوب برای ورود منضبط به بازار";
-      } else if (score >= 50) {
-        badge.className = "badge badge-warn";
-        advice.className = "badge badge-warn";
-        advice.textContent = "آمادگی متوسط؛ حجم را محافظه‌کارانه انتخاب کنید";
-      } else {
-        badge.className = "badge badge-bad";
-        advice.className = "badge badge-bad";
-        advice.textContent = "هشدار: آمادگی ذهنی پایین است؛ از معامله پرهیز کنید";
-      }
-    }
-
-    /* Trades CRUD & Stats */
-    function computePsychScore(t) {
-      if (t.needsPsych) return 50;
-      let score = 100;
-      if (t.emotion && t.emotion !== "آرام و منضبط") score -= 25;
-      if (t.ruleStatus === "خطای جزئی") score -= 20;
-      if (t.ruleStatus === "نقض حد ضرر یا حجم") score -= 45;
-      return Math.max(0, Math.min(100, score));
-    }
-
-    function saveManualTrade(event) {
-      event.preventDefault();
-      const symbol = document.getElementById("mSymbol").value.trim().toUpperCase() || "XAUUSD";
-      const side = document.getElementById("mSide").value;
-      const lots = Number(document.getElementById("mLots").value) || 0.01;
-      const pnl = Number(document.getElementById("mPnl").value) || 0;
-      const emotion = document.getElementById("mEmotion").value;
-      const ruleStatus = document.getElementById("mRule").value;
-      const notes = document.getElementById("mNotes").value.trim();
-
-      const trade = {
-        id: "tr_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-        source: "manual",
-        date: new Date().toISOString().slice(0, 16).replace("T", " "),
-        symbol,
-        side,
-        lots,
-        pnl,
-        emotion,
-        ruleStatus,
-        notes,
-        needsPsych: false
-      };
-
-      state.trades.unshift(trade);
-      saveJson(STORAGE_KEYS.TRADES, state.trades);
-      document.getElementById("mPnl").value = "";
-      document.getElementById("mNotes").value = "";
-      showToast("معامله با موفقیت ثبت شد.");
-      renderAll();
-      switchTab("history");
-    }
-
-    function deleteTrade(id) {
-      state.trades = state.trades.filter(t => t.id !== id);
-      saveJson(STORAGE_KEYS.TRADES, state.trades);
-      showToast("معامله حذف شد.");
-      renderAll();
-    }
-
-    function clearAllTrades() {
-      if (!state.trades.length) {
-        showToast("لیست معاملات خالی است.");
-        return;
-      }
-      if (confirm("آیا از حذف همه معاملات ثبت‌شده مطمئن هستید؟")) {
-        state.trades = [];
-        saveJson(STORAGE_KEYS.TRADES, state.trades);
-        showToast("همه معاملات پاک شدند.");
-        renderAll();
-      }
-    }
-
-    function setFilter(filterKey, el) {
-      state.filter = filterKey;
-      document.querySelectorAll("#filterChips .chip").forEach(c => c.classList.remove("active"));
-      if (el) el.classList.add("active");
-      renderTrades();
-    }
-
-    function renderStats() {
-      const trades = state.trades;
-      const total = trades.length;
-      const wins = trades.filter(t => Number(t.pnl) > 0).length;
-      const losses = trades.filter(t => Number(t.pnl) < 0).length;
-      const decisive = wins + losses;
-      const winRate = decisive > 0 ? Math.round((wins / decisive) * 100) : 0;
-
-      const netPnl = trades.reduce((acc, t) => acc + (Number(t.pnl) || 0), 0);
-      const grossProfit = trades.filter(t => Number(t.pnl) > 0).reduce((acc, t) => acc + Number(t.pnl), 0);
-      const grossLoss = Math.abs(trades.filter(t => Number(t.pnl) < 0).reduce((acc, t) => acc + Number(t.pnl), 0));
-      const pf = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : (grossProfit > 0 ? "∞" : "0.00");
-
-      const completed = trades.filter(t => !t.needsPsych);
-      const cleanCount = completed.filter(t => t.emotion === "آرام و منضبط" && t.ruleStatus === "کاملاً رعایت شد").length;
-      const cleanRate = completed.length > 0 ? Math.round((cleanCount / completed.length) * 100) : 0;
-      const avgPsych = completed.length > 0
-        ? Math.round(completed.reduce((acc, t) => acc + computePsychScore(t), 0) / completed.length)
-        : 0;
-
-      document.getElementById("statWinRate").textContent = winRate + "%";
-      document.getElementById("statWinLoss").textContent = wins + " برد / " + losses + " باخت";
-
-      const pnlEl = document.getElementById("statNetPnl");
-      pnlEl.textContent = (netPnl < 0 ? "-" : "") + "$" + Math.abs(netPnl).toFixed(2);
-      pnlEl.className = "stat-val " + (netPnl > 0 ? "pos" : netPnl < 0 ? "neg" : "");
-      document.getElementById("statTotalTrades").textContent = "بر اساس " + total + " معامله ثبت‌شده";
-
-      document.getElementById("statCleanRate").textContent = cleanRate + "%";
-      document.getElementById("statPsychAvg").textContent = "میانگین امتیاز روان: " + avgPsych + "/100";
-      document.getElementById("statPF").textContent = pf;
-
-      const pendingCount = trades.filter(t => t.needsPsych).length;
-      const banner = document.getElementById("pendingBanner");
-      const dot = document.getElementById("histDot");
-      if (pendingCount > 0) {
-        banner.classList.remove("hidden");
-        dot.classList.remove("hidden");
-        document.getElementById("pendingBannerDesc").textContent =
-          "تعداد " + pendingCount + " معامله واردشده از MT5 هنوز وضعیت روانی ندارند.";
-      } else {
-        banner.classList.add("hidden");
-        dot.classList.add("hidden");
-      }
-    }
-
-    function renderTrades() {
-      const listEl = document.getElementById("tradesList");
-      const q = (document.getElementById("searchSymbolInput").value || "").trim().toLowerCase();
-
-      const filtered = state.trades.filter(t => {
-        if (q && !String(t.symbol || "").toLowerCase().includes(q)) return false;
-        if (state.filter === "pending") return Boolean(t.needsPsych);
-        if (state.filter === "win") return Number(t.pnl) > 0;
-        if (state.filter === "loss") return Number(t.pnl) < 0;
-        if (state.filter === "mistake") return !t.needsPsych && (t.emotion !== "آرام و منضبط" || t.ruleStatus !== "کاملاً رعایت شد");
-        return true;
-      });
-
-      if (!filtered.length) {
-        listEl.innerHTML = '<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13px;">معامله‌ای با این فیلتر یافت نشد.</div>';
-        return;
-      }
-
-      listEl.innerHTML = filtered.map(t => {
-        const pnl = Number(t.pnl) || 0;
-        const pnlText = (pnl < 0 ? "-" : "+") + "$" + Math.abs(pnl).toFixed(2);
-        const pnlClass = pnl > 0 ? "pos" : pnl < 0 ? "neg" : "";
-        const sourceBadge = t.source === "mt5" ? '<span class="badge badge-info">MT5 Sheet</span>' : '<span class="badge badge-ok">دستی</span>';
-        const psychBadge = t.needsPsych
-          ? '<span class="badge badge-warn">نیاز به تکمیل روانشناسی</span>'
-          : '<span class="badge badge-ok">' + escapeHtml(t.emotion || "ثبت‌شده") + '</span>';
-
-        return `
-          <div class="trade-card">
-            <div class="trade-head">
-              <div>
-                <strong>${escapeHtml(t.symbol)}</strong>
-                <span style="font-size:11.5px; color:var(--text-muted); margin-right:6px;">${escapeHtml(t.side || "")} • Lot ${escapeHtml(String(t.lots || 0))}</span>
-              </div>
-              <div class="${pnlClass}" style="font-weight:800; direction:ltr;">${pnlText}</div>
-            </div>
-            <div class="trade-meta">
-              ${sourceBadge}
-              ${psychBadge}
-              <span class="badge badge-info" style="direction:ltr;">${escapeHtml(t.date || "")}</span>
-            </div>
-            ${t.notes ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${escapeHtml(t.notes)}</div>` : ""}
-            <div class="trade-foot">
-              <button type="button" class="btn btn-danger btn-sm" onclick="deleteTrade('${t.id}')">حذف</button>
-              <button type="button" class="btn btn-warn btn-sm" onclick="openPsychModal('${t.id}')">
-                ${t.needsPsych ? "تکمیل وضعیت روانشناسی" : "ویرایش روانشناسی"}
-              </button>
-            </div>
-          </div>
-        `;
-      }).join("");
-    }
-
-    function escapeHtml(str) {
-      return String(str || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-    }
-
-    /* Psychology Modal */
-    function openPsychModal(id) {
-      const tr = state.trades.find(t => t.id === id);
-      if (!tr) return;
-      state.editingTradeId = id;
-      document.getElementById("psychTradeSummary").textContent =
-        tr.symbol + " | " + (Number(tr.pnl) >= 0 ? "+" : "") + "$" + Number(tr.pnl).toFixed(2);
-      document.getElementById("pEmotion").value = tr.emotion || "آرام و منضبط";
-      document.getElementById("pRule").value = tr.ruleStatus || "کاملاً رعایت شد";
-      document.getElementById("pNotes").value = tr.notes || "";
-      document.getElementById("psychModal").classList.add("open");
-    }
-
-    function openNextPendingPsych() {
-      const next = state.trades.find(t => t.needsPsych);
-      if (next) {
-        switchTab("history");
-        openPsychModal(next.id);
-      }
-    }
-
-    function closePsychModal() {
-      state.editingTradeId = null;
-      document.getElementById("psychModal").classList.remove("open");
-    }
-
-    function savePsychModal() {
-      if (!state.editingTradeId) return;
-      const tr = state.trades.find(t => t.id === state.editingTradeId);
-      if (!tr) return;
-      tr.emotion = document.getElementById("pEmotion").value;
-      tr.ruleStatus = document.getElementById("pRule").value;
-      tr.notes = document.getElementById("pNotes").value.trim();
-      tr.needsPsych = false;
-      saveJson(STORAGE_KEYS.TRADES, state.trades);
-      closePsychModal();
-      showToast("وضعیت روانشناسی ذخیره شد.");
-      renderAll();
-    }
-
-    /* Chart */
-    function renderChart() {
-      const ctx = document.getElementById("pnlChart");
-      if (!ctx || typeof Chart === "undefined") return;
-      const ordered = [...state.trades].reverse();
-      let cum = 0;
-      const labels = ordered.map((t, idx) =
+<script>
+(() => {
+  'use strict';
+  const VERSION = '2.1.0';
+  const AUTH_KEY = 'zt2_auth_v1';
+  const VAULT_KEY = 'zt2_vault_v1';
+  const THEME_KEY = 'zt2_theme_v1';
+  const SESSION_DB = 'zt2_session_db_v1';
+  const SESSION_STORE = 'keys';
+  const SESSION_MARKER = 'zt2_session_marker_v1';
+  const SESSION_ACTIVITY = 'zt2_session_activity_v1';
+  const IDLE_TIMEOUT = 10 * 60 * 1000;
+  let idleTimer = null, lastActivityWrite = 0, lockingForIdle = false;
+  const DEFAULT_STATE = {
+    trades: [], rules: [
+      'قبل از ورود، روند و فیلتر EMA 60 را بررسی می‌کنم.',
+      'پس از ضرر برای جبران سریع، حجم را افزایش نمی‌دهم.',
+      'حد ضرر را جابه‌جا نمی‌کنم و بدون پلن وارد نمی‌شوم.'
+    ],
+    settings: {gasUrl:'', apiToken:'', autoSync:false, sheetName:'Journal'},
+    readiness: {sleep:4, focus:4, plan:5},
+    tiltEnd: 0,
+    lastSync: null,
+    lastSyncCount: 0,
+    ignoredSourceKeys: []
+  };
+  const $ = id => document.getElementById(id);
+  let app = {data:null, key:null, currentView:'dashboard', currentFilter:'all', editingId:null, breathTimer:null, tiltTimer:null, toastTimer:null, saveChain:Promise.resolve(), syncing:false, chartResize:null};
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const b64 = buf => { const bytes=new Uint8Array(buf); let binary=''; for(let i=0;i<bytes.length;i+=0x8000) binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000)); return btoa(binary); };
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const clone = x => JSON.parse(JSON.stringify(x));
+  const fmtMoney = n => (Number(n)<0?'-':'')+'$'+Math.abs(Number(n)||0).toFixed(2);
+  const faNum = n => Number(n||0).toLocaleString('fa-IR');
+  const nowLocalInput = () => {const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
+  const normalize = s => String(s??'').toLowerCase().replace(/[\s_\-./()\[\]]/g,'').replace(/[آأإ]/g,'ا').trim();
+  function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');clearTimeout(app.toastTimer);app.toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),3000)}
+  function safeDate(v){if(v instanceof Date)return v;if(v===null||v===undefined||v==='')return null;let d=new Date(v);if(!Number.isNaN(d.getTime()))return d;const s=String(v).trim();const m=s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);if(m){d=new Date(+m[1],+m[2]-1,+m[3],+(m[4]||0),+(m[5]||0),+(m[6]||0));return Number.isNaN(d.getTime())?null:d}return null}
+  function fmtDate(v){const d=safeDate(v);return d?d.toLocaleString('fa-IR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):String(v||'—')}
+  function getCrypto(){if(!window.crypto?.subtle)throw new Error('برای رمزگذاری، برنامه را در مرورگر به‌روز و بستر امن HTTPS اجرا کن.');return crypto.subtle}
+  async function deriveKey(password,salt){return getCrypto().deriveKey({name:'PBKDF2',salt,iterations:250000,hash:'SHA-256'},await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveKey']),{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+  async function deriveKeyExportable(password,salt){return getCrypto().deriveKey({name:'PBKDF2',salt,iterations:250000,hash:'SHA-256'},await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveKey']),{name:'AES-GCM',length:256},true,['encrypt','decrypt'])}
+  async function encryptText(key,text){const iv=crypto.getRandomValues(new Uint8Array(12));const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(text));return {iv:b64(iv),data:b64(cipher)}}
+  async function decryptText(key,obj){const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(obj.iv)},key,unb64(obj.data));return dec.decode(plain)}
+  async function encryptBytes(key,bytes){const iv=crypto.getRandomValues(new Uint8Array(12));const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,bytes);return {iv:b64(iv),data:b64(cipher)}}
+  async function decryptBytes(key,obj){return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(obj.iv)},key,unb64(obj.data)))}
+  function openSessionDb(){return new Promise((resolve,reject)=>{if(!('indexedDB'in window)){reject(new Error('IndexedDB در این مرورگر در دسترس نیست.'));return}const req=indexedDB.open(SESSION_DB,1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(SESSION_STORE))req.result.createObjectStore(SESSION_STORE,{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('بازکردن حافظه نشست ناموفق بود.'))})}
+  async function sessionDbPut(record){const db=await openSessionDb();return new Promise((resolve,reject)=>{const tx=db.transaction(SESSION_STORE,'readwrite');tx.objectStore(SESSION_STORE).put(record);tx.oncomplete=()=>{db.close();resolve()};tx.onerror=()=>{db.close();reject(tx.error||new Error('ذخیره نشست ناموفق بود.'))}})}
+  async function sessionDbGet(id){const db=await openSessionDb();return new Promise((resolve,reject)=>{const tx=db.transaction(SESSION_STORE,'readonly'),req=tx.objectStore(SESSION_STORE).get(id);req.onsuccess=()=>{const v=req.result||null;db.close();resolve(v)};req.onerror=()=>{db.close();reject(req.error)}})}
+  async function sessionDbDelete(id){if(!id)return;try{const db=await openSessionDb();await new Promise((resolve,reject)=>{const tx=db.transaction(SESSION_STORE,'readwrite');tx.objectStore(SESSION_STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch(e){}}
+  async function clearRememberedSession(){let id=app.sessionId;try{id=id||sessionStorage.getItem(SESSION_MARKER);sessionStorage.removeItem(SESSION_MARKER);sessionStorage.removeItem(SESSION_ACTIVITY)}catch(e){}app.sessionId=null;app.lastActivity=0;await sessionDbDelete(id);clearTimeout(idleTimer);idleTimer=null}
+  function getLastActivity(){try{const value=Number(sessionStorage.getItem(SESSION_ACTIVITY)||0);if(value)return value}catch(e){}return Number(app.lastActivity||0)}
+  async function startVolatileSession(){await clearRememberedSession();app.sessionId='volatile';app.lastActivity=Date.now();try{sessionStorage.setItem(SESSION_ACTIVITY,String(app.lastActivity))}catch(e){}startIdleMonitor()}
+  async function rememberCurrentSession(){try{const id=crypto.randomUUID();await sessionDbPut({id,cryptoKey:app.key,createdAt:Date.now()});sessionStorage.setItem(SESSION_MARKER,id);sessionStorage.setItem(SESSION_ACTIVITY,String(Date.now()));app.sessionId=id;app.lastActivity=Date.now();startIdleMonitor()}catch(e){app.sessionId='volatile';app.lastActivity=Date.now();try{sessionStorage.removeItem(SESSION_MARKER);sessionStorage.setItem(SESSION_ACTIVITY,String(app.lastActivity))}catch(e2){}startIdleMonitor();toast('حفظ نشست پس از Refresh در این مرورگر پشتیبانی نشد؛ قفل خودکار همچنان فعال است.')}}
+  function sessionExpired(){const last=getLastActivity();return !last||Date.now()-last>IDLE_TIMEOUT}
+  async function resumeRememberedSession(){let id='';try{id=sessionStorage.getItem(SESSION_MARKER)||'';if(!id||sessionExpired()) {await clearRememberedSession();return false}const record=await sessionDbGet(id);if(!record?.cryptoKey){await clearRememberedSession();return false}const auth=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(!auth){await clearRememberedSession();return false}const verified=await decryptText(record.cryptoKey,auth.verifier);if(verified!=='ZehnTrader-Verified-v1'){await clearRememberedSession();return false}const raw=localStorage.getItem(VAULT_KEY);const data=raw?JSON.parse(await decryptText(record.cryptoKey,JSON.parse(raw))):clone(DEFAULT_STATE);app.key=record.cryptoKey;app.data={...clone(DEFAULT_STATE),...data,settings:{...DEFAULT_STATE.settings,...(data.settings||{})},readiness:{...DEFAULT_STATE.readiness,...(data.readiness||{})}};app.sessionId=id;touchSession(true);startIdleMonitor();return true}catch(e){await clearRememberedSession();return false}}
+  function touchSession(force=false){if(!app.key||!app.sessionId)return;const now=Date.now();if(!force&&now-lastActivityWrite<8000)return;lastActivityWrite=now;app.lastActivity=now;try{sessionStorage.setItem(SESSION_ACTIVITY,String(now))}catch(e){}startIdleMonitor()}
+  function startIdleMonitor(){clearTimeout(idleTimer);if(!app.key||!app.sessionId)return;const last=getLastActivity()||Date.now(),remaining=Math.max(0,IDLE_TIMEOUT-(Date.now()-last));idleTimer=setTimeout(()=>lockForInactivity(),remaining)}
+  async function lockForInactivity(){if(lockingForIdle||!app.key||!app.sessionId)return;if(!sessionExpired()){startIdleMonitor();return}lockingForIdle=true;try{await persist();await lockApp();toast('به‌دلیل ۱۰ دقیقه عدم فعالیت، برنامه قفل شد.')}finally{lockingForIdle=false}}
+  function biometricSupported(){return Boolean(window.isSecureContext&&window.PublicKeyCredential&&navigator.credentials?.create&&navigator.credentials?.get&&crypto?.subtle)}
+  function refreshPasskeyUI(){const auth=JSON.parse(localStorage.getItem(AUTH_KEY)||'null'),ready=Boolean(auth?.biometric?.credentialId);const loginBtn=$('passkeyLogin');if(loginBtn)loginBtn.style.display=ready?'block':'none';const status=$('passkeyStatus');if(status)status.textContent=ready?'روی این دستگاه فعال است':(biometricSupported()?'فعال نشده':'مرورگر/بستر از آن پشتیبانی نمی‌کند');const reg=$('registerPasskey'),rem=$('removePasskey');if(reg)reg.disabled=!biometricSupported();if(rem)rem.disabled=!ready}
+  function showLogin(isSetup){$('loginWrap').classList.remove('hidden');$('appRoot').classList.add('hidden');$('mobileNav').classList.add('hidden');$('loginTitle').textContent=isSetup?'ساخت فضای امن ذهن تریدر':'ورود به ذهن تریدر';$('loginHint').textContent=isSetup?'برای محافظت از اطلاعات ژورنال، یک رمز عبور حداقل ۸ کاراکتری تعیین کن. این رمز روی سرور ارسال نمی‌شود.':'رمز عبور فضای رمزگذاری‌شده این دستگاه را وارد کن؛ یا از Passkey دستگاه استفاده کن.';$('confirmField').classList.toggle('hidden',!isSetup);$('rememberField').classList.toggle('hidden',isSetup);$('loginSubmit').textContent=isSetup?'ساخت فضای امن':'ورود امن';$('password').value='';$('confirmPassword').value='';$('cryptoStatus').textContent=window.crypto?.subtle?'رمزگذاری فعال':'مرورگر امن لازم است';refreshPasskeyUI()}
+  async function setupVault(password){const salt=crypto.getRandomValues(new Uint8Array(16));const key=await deriveKey(password,salt);const verifier=await encryptText(key,'ZehnTrader-Verified-v1');const data=clone(DEFAULT_STATE);const vault=await encryptText(key,JSON.stringify(data));localStorage.setItem(AUTH_KEY,JSON.stringify({salt:b64(salt),verifier}));localStorage.setItem(VAULT_KEY,JSON.stringify(vault));app.key=key;app.data=data;}
+  async function unlockVault(password){const auth=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(!auth)throw new Error('فضای امن هنوز ساخته نشده است.');const key=await deriveKey(password,unb64(auth.salt));const verified=await decryptText(key,auth.verifier);if(verified!=='ZehnTrader-Verified-v1')throw new Error('رمز عبور نادرست است.');const raw=localStorage.getItem(VAULT_KEY);const data=raw?JSON.parse(await decryptText(key,JSON.parse(raw))):clone(DEFAULT_STATE);app.key=key;app.data={...clone(DEFAULT_STATE),...data,settings:{...DEFAULT_STATE.settings,...(data.settings||{})},readiness:{...DEFAULT_STATE.readiness,...(data.readiness||{})}};}
+  async function derivePasskeyWrapKey(prfBytes,salt){const material=await crypto.subtle.importKey('raw',prfBytes,'HKDF',false,['deriveKey']);return crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt,info:enc.encode('ZehnTrader local vault Passkey PRF v1')},material,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+  async function getPasskeyPrf(credentialId,salt){const assertion=await navigator.credentials.get({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),allowCredentials:[{type:'public-key',id:unb64(credentialId)}],userVerification:'required',timeout:60000,extensions:{prf:{eval:{first:salt}}}}});const result=assertion?.getClientExtensionResults?.().prf?.results?.first;if(!result)throw new Error('این Passkey خروجی امن PRF ارائه نکرد. از رمز عبور استفاده کن یا Passkey سازگار دیگری ثبت کن.');return new Uint8Array(result)}
+  async function registerPasskey(){if(!app.key||!biometricSupported())throw new Error('برای ثبت Passkey به HTTPS و مرورگر سازگار نیاز است.');const password=prompt('برای اتصال امن اثر انگشت، یک‌بار رمز اصلی فضای ذهن تریدر را وارد کن:');if(!password)return;const auth=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');const checkKey=await deriveKey(password,unb64(auth.salt));if(await decryptText(checkKey,auth.verifier)!=='ZehnTrader-Verified-v1')throw new Error('رمز اصلی نادرست است.');const exportKey=await deriveKeyExportable(password,unb64(auth.salt));const salt=crypto.getRandomValues(new Uint8Array(32));const credential=await navigator.credentials.create({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),rp:{name:'ذهن تریدر'},user:{id:crypto.getRandomValues(new Uint8Array(16)),name:'zehn-trader-user',displayName:'ذهن تریدر'},pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',residentKey:'preferred',userVerification:'required'},timeout:60000,extensions:{prf:{eval:{first:salt}}}}});if(!credential)throw new Error('ثبت Passkey لغو شد.');const credentialId=b64(credential.rawId);const prfBytes=await getPasskeyPrf(credentialId,salt);const wrapKey=await derivePasskeyWrapKey(prfBytes,salt);const rawKey=new Uint8Array(await crypto.subtle.exportKey('raw',exportKey));auth.biometric={credentialId,salt:b64(salt),wrappedKey:await encryptBytes(wrapKey,rawKey),createdAt:new Date().toISOString()};localStorage.setItem(AUTH_KEY,JSON.stringify(auth));refreshPasskeyUI();toast('ورود با Passkey این دستگاه فعال شد.')}
+  async function unlockWithPasskey(){const auth=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(!auth?.biometric)throw new Error('برای این دستگاه Passkey ثبت نشده است.');if(!biometricSupported())throw new Error('ورود بیومتریک فقط در بستر HTTPS و مرورگر سازگار فعال می‌شود.');const salt=unb64(auth.biometric.salt);const prfBytes=await getPasskeyPrf(auth.biometric.credentialId,salt);const wrapKey=await derivePasskeyWrapKey(prfBytes,salt);const rawKey=await decryptBytes(wrapKey,auth.biometric.wrappedKey);const key=await crypto.subtle.importKey('raw',rawKey,{name:'AES-GCM'},false,['encrypt','decrypt']);const verified=await decryptText(key,auth.verifier);if(verified!=='ZehnTrader-Verified-v1')throw new Error('این Passkey به فضای امن فعلی متصل نیست. با رمز اصلی وارد شو.');const raw=localStorage.getItem(VAULT_KEY);const data=raw?JSON.parse(await decryptText(key,JSON.parse(raw))):clone(DEFAULT_STATE);app.key=key;app.data={...clone(DEFAULT_STATE),...data,settings:{...DEFAULT_STATE.settings,...(data.settings||{})},readiness:{...DEFAULT_STATE.readiness,...(data.readiness||{})}};await showApp();toast('ورود با Passkey موفق بود.')}
+  async function removePasskey(){const auth=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(!auth?.biometric){toast('Passkey فعالی ثبت نشده است.');return}if(!confirm('اتصال Passkey این دستگاه از ذهن تریدر حذف شود؟'))return;delete auth.biometric;localStorage.setItem(AUTH_KEY,JSON.stringify(auth));refreshPasskeyUI();toast('اتصال Passkey از این برنامه حذف شد. خود Passkey ممکن است همچنان در تنظیمات دستگاه باقی بماند.')}
+  function persist(){if(!app.key||!app.data)return;const snapshot=JSON.stringify(app.data);app.saveChain=app.saveChain.then(async()=>{const encrypted=await encryptText(app.key,snapshot);localStorage.setItem(VAULT_KEY,JSON.stringify(encrypted))}).catch(e=>toast('ذخیره اطلاعات انجام نشد: '+e.message));return app.saveChain}
+  async function exportBackup(){await persist();const auth=JSON.parse(localStorage.getItem(AUTH_KEY));delete auth.biometric;const vault=JSON.parse(localStorage.getItem(VAULT_KEY));const file={app:'ZehnTrader',version:VERSION,createdAt:new Date().toISOString(),auth,vault};downloadBlob(JSON.stringify(file,null,2),'zehn-trader-backup-'+new Date().toISOString().slice(0,10)+'.json','application/json');toast('پشتیبان رمزگذاری‌شده آماده شد.')}
+  function downloadBlob(content,name,type){const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+  async function restoreBackup(file,password){const parsed=JSON.parse(await file.text());if(parsed.app!=='ZehnTrader'||!parsed.auth||!parsed.vault)throw new Error('فایل پشتیبان معتبر نیست.');const key=await deriveKey(password,unb64(parsed.auth.salt));const v=await decryptText(key,parsed.auth.verifier);if(v!=='ZehnTrader-Verified-v1')throw new Error('رمز پشتیبان اشتباه است.');const data=JSON.parse(await decryptText(key,parsed.vault));localStorage.setItem(AUTH_KEY,JSON.stringify(parsed.auth));localStorage.setItem(VAULT_KEY,JSON.stringify(parsed.vault));app.key=key;app.data={...clone(DEFAULT_STATE),...data};}
+  async function showApp(options={}){if(options.remember!==false){if($('rememberSession')?.checked!==false)await rememberCurrentSession();else await startVolatileSession()}$('loginWrap').classList.add('hidden');$('appRoot').classList.remove('hidden');$('mobileNav').classList.remove('hidden');applyTheme();populateSettings();renderAll();refreshPasskeyUI();if(app.data.settings.autoSync&&app.data.settings.gasUrl)syncFromSheet(); }
+  async function lockApp(){if(app.breathTimer){clearInterval(app.breathTimer);app.breathTimer=null}if(app.tiltTimer){clearInterval(app.tiltTimer);app.tiltTimer=null}await clearRememberedSession();app.key=null;app.data=null;showLogin(false)}
+  function applyTheme(){const light=localStorage.getItem(THEME_KEY)==='light';document.body.classList.toggle('light',light);$('themeBtn').textContent=light?'☾':'☼'}
+  function switchView(view){app.currentView=view;document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+view));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));const titles={dashboard:'داشبورد عملکرد',trades:'ژورنال معاملات',psychology:'مدیریت روان‌شناسی',reports:'گزارش‌ها و تحلیل',settings:'اتصال و تنظیمات'};$('pageTitle').textContent=titles[view]||'ذهن تریدر';if(view==='reports')renderReports();if(view==='psychology')renderPsychology();if(view==='trades')renderTrades()}
+  function isMistake(t){return !t.needsPsych&&(t.ruleStatus&&t.ruleStatus!=='کاملاً رعایت شد'||t.emotion&&t.emotion!=='آرام و منضبط'||t.afterLoss==='yes'||t.reason==='FOMO و ترس از جا ماندن'||t.reason==='جبران ضرر قبلی')}
+  function psychScore(t){if(t.needsPsych)return null;let s=100;if(t.emotion&&t.emotion!=='آرام و منضبط')s-=15;if(t.ruleStatus==='خطای جزئی')s-=20;if(t.ruleStatus==='نقض حد ضرر یا حجم'||t.ruleStatus==='ورود خارج از پلن')s-=45;if(Number(t.stress)>=4)s-=10;if(t.afterLoss==='yes')s-=15;return Math.max(0,s)}
+  function stats(trades){const n=trades.length,w=trades.filter(t=>Number(t.pnl)>0),l=trades.filter(t=>Number(t.pnl)<0),grossP=w.reduce((a,t)=>a+Number(t.pnl),0),grossL=Math.abs(l.reduce((a,t)=>a+Number(t.pnl),0)),net=grossP-grossL,ordered=[...trades].sort((a,b)=>(safeDate(a.date)?.getTime()||0)-(safeDate(b.date)?.getTime()||0));let cum=0,peak=0,dd=0;ordered.forEach(t=>{cum+=Number(t.pnl)||0;peak=Math.max(peak,cum);dd=Math.max(dd,peak-cum)});return {n,w:w.length,l:l.length,winRate:w.length+l.length?100*w.length/(w.length+l.length):0,grossP,grossL,net,pf:grossL?grossP/grossL:(grossP?Infinity:0),expectancy:n?net/n:0,dd,avg:n?net/n:0}}
+  function renderAll(){renderDashboard();renderTrades();renderPsychology();renderReports();updateSyncUI()}
+  function renderDashboard(){const s=stats(app.data.trades);$('sWin').textContent=s.winRate.toFixed(1)+'%';$('sWinSub').textContent=faNum(s.w)+' برد / '+faNum(s.l)+' باخت';$('sNet').textContent=fmtMoney(s.net);$('sNet').className='value '+(s.net>0?'positive':s.net<0?'negative':'');$('sPf').textContent=Number.isFinite(s.pf)?s.pf.toFixed(2):(s.pf===Infinity?'∞':'0.00');$('sExp').textContent=fmtMoney(s.expectancy);$('sDd').textContent=fmtMoney(s.dd);drawChart();renderRecent();renderPsychProgress();updateReadinessUI()}
+  function drawChart(){const c=$('equityChart');if(!c)return;const rect=c.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);c.width=Math.max(300,rect.width*dpr);c.height=Math.max(180,rect.height*dpr);const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const w=c.width/dpr,h=c.height/dpr;ctx.clearRect(0,0,w,h);const trades=[...app.data.trades].sort((a,b)=>(safeDate(a.date)?.getTime()||0)-(safeDate(b.date)?.getTime()||0));if(!trades.length){ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--muted');ctx.font='12px Tahoma';ctx.textAlign='center';ctx.fillText('پس از ثبت یا دریافت معامله، نمودار نمایش داده می‌شود',w/2,h/2);return}let cum=0;const vals=[0,...trades.map(t=>cum+=Number(t.pnl)||0)];const min=Math.min(0,...vals),max=Math.max(0,...vals),span=max-min||1,pad=24;const x=i=>pad+(w-pad*2)*i/(vals.length-1||1),y=v=>h-pad-(v-min)/span*(h-pad*2);ctx.strokeStyle=getComputedStyle(document.body).getPropertyValue('--line');ctx.lineWidth=1;for(let i=0;i<4;i++){const yy=pad+i*(h-pad*2)/3;ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(w-pad,yy);ctx.stroke()}ctx.beginPath();vals.forEach((v,i)=>i?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v)));ctx.strokeStyle=getComputedStyle(document.body).getPropertyValue('--green');ctx.lineWidth=2.5;ctx.stroke();ctx.lineTo(x(vals.length-1),h-pad);ctx.lineTo(x(0),h-pad);ctx.closePath();ctx.fillStyle='rgba(22,199,132,.10)';ctx.fill();ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--muted');ctx.font='10px Tahoma';ctx.textAlign='left';ctx.fillText(fmtMoney(max),4,13);ctx.fillText(fmtMoney(min),4,h-5)}
+  function tradeCard(t){const pnl=Number(t.pnl)||0;const badge=t.source==='mt5'?'MT5':'دستی';const psych=t.needsPsych?'<span class="pill warn">نیازمند روان‌شناسی</span>':`<span class="pill ${isMistake(t)?'bad':'good'}">${esc(t.emotion||'تکمیل‌شده')}</span>`;return `<article class="trade"><div class="trade-top"><div><strong>${esc(t.symbol||'—')}</strong> <span class="small muted">${esc(t.side||'')} · ${esc(String(t.lots||0))} Lot</span></div><b class="${pnl>0?'positive':pnl<0?'negative':''} ltr">${fmtMoney(pnl)}</b></div><div class="trade-meta"><span class="pill">${badge}</span>${psych}<span class="pill">${esc(fmtDate(t.date))}</span>${t.ticket?`<span class="pill ltr">#${esc(t.ticket)}</span>`:''}</div><div class="trade-bottom"><span class="muted">${esc(t.notes||t.reason||'بدون یادداشت')}</span><div class="trade-actions"><button class="btn warn" data-psych="${esc(t.id)}">${t.needsPsych?'تکمیل روان':'ویرایش روان'}</button><button class="btn danger" data-delete="${esc(t.id)}">حذف</button></div></div></article>`}
+  function renderRecent(){$('recentTrades').innerHTML=app.data.trades.length?[...app.data.trades].sort((a,b)=>(safeDate(b.date)?.getTime()||0)-(safeDate(a.date)?.getTime()||0)).slice(0,4).map(tradeCard).join(''):'<div class="empty">هنوز معامله‌ای ثبت نشده است.</div>';bindTradeActions($('recentTrades'))}
+  function renderPsychProgress(){const total=app.data.trades.length,pending=app.data.trades.filter(t=>t.needsPsych).length,done=total-pending;$('pendingPill').textContent=faNum(pending)+' معامله منتظر';$('psychProgress').innerHTML=`<div class="metric-row"><span>معاملات تکمیل‌شده</span><b>${faNum(done)} از ${faNum(total)}</b></div><div class="bar"><i style="width:${total?done/total*100:0}%"></i></div><div class="metric-row"><span>معاملات نیازمند بررسی</span><b class="warning">${faNum(pending)}</b></div><div class="metric-row"><span>درصد تکمیل</span><b>${total?Math.round(done/total*100):0}%</b></div>`;$('openPendingBtn').disabled=!pending}
+  function renderTrades(){const q=($('tradeSearch')?.value||'').trim().toLowerCase(),sort=$('tradeSort')?.value||'new';let arr=app.data.trades.filter(t=>{const str=[t.symbol,t.ticket,t.id].join(' ').toLowerCase();if(q&&!str.includes(q))return false;switch(app.currentFilter){case'pending':return !!t.needsPsych;case'win':return Number(t.pnl)>0;case'loss':return Number(t.pnl)<0;case'mistake':return isMistake(t);case'mt5':return t.source==='mt5';default:return true}});arr.sort((a,b)=>sort==='profit'?Number(b.pnl)-Number(a.pnl):sort==='loss'?Number(a.pnl)-Number(b.pnl):sort==='old'?(safeDate(a.date)?.getTime()||0)-(safeDate(b.date)?.getTime()||0):(safeDate(b.date)?.getTime()||0)-(safeDate(a.date)?.getTime()||0));$('tradeCountPill').textContent=faNum(arr.length)+' معامله';$('tradeList').innerHTML=arr.length?arr.map(tradeCard).join(''):'<div class="empty">معامله‌ای با این فیلتر پیدا نشد.</div>';bindTradeActions($('tradeList'))}
+  function bindTradeActions(root){root.querySelectorAll('[data-psych]').forEach(b=>b.addEventListener('click',()=>openPsych(b.dataset.psych)));root.querySelectorAll('[data-delete]').forEach(b=>b.addEventListener('click',()=>deleteTrade(b.dataset.delete)))}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+  function openPsych(id){const t=app.data.trades.find(x=>x.id===id);if(!t)return;app.editingId=id;$('psychSummary').textContent=`${t.symbol} · ${fmtMoney(t.pnl)} · ${fmtDate(t.date)}`;$('pEmotion').value=t.emotion||'آرام و منضبط';$('pRule').value=t.ruleStatus||'کاملاً رعایت شد';$('pStress').value=t.stress||2;$('stressValue').textContent=($('pStress').value)+'/5';$('pAfterLoss').value=t.afterLoss||'no';$('pReason').value=t.reason||'ستاپ مطابق پلن';$('pNotes').value=t.notes||'';$('psychModal').classList.add('open')}
+  function closePsych(){$('psychModal').classList.remove('open');app.editingId=null}
+  async function savePsych(e){e.preventDefault();const t=app.data.trades.find(x=>x.id===app.editingId);if(!t)return;t.emotion=$('pEmotion').value;t.ruleStatus=$('pRule').value;t.stress=Number($('pStress').value);t.afterLoss=$('pAfterLoss').value;t.reason=$('pReason').value;t.notes=$('pNotes').value.trim();t.needsPsych=false;t.psychUpdatedAt=new Date().toISOString();closePsych();await persist();renderAll();toast('وضعیت روان‌شناسی ذخیره شد.')}
+  async function deleteTrade(id){if(!confirm('این معامله از ژورنال همین دستگاه حذف شود؟'))return;const target=app.data.trades.find(t=>t.id===id);if(target?.source==='mt5'&&target.sourceKey){app.data.ignoredSourceKeys=app.data.ignoredSourceKeys||[];if(!app.data.ignoredSourceKeys.includes(target.sourceKey))app.data.ignoredSourceKeys.push(target.sourceKey)}app.data.trades=app.data.trades.filter(t=>t.id!==id);await persist();renderAll();toast('معامله حذف شد.')}
+  function updateReadinessUI(){const r=app.data.readiness;[['sleep','sleepRange','sleepVal'],['focus','focusRange','focusVal'],['plan','planRange','planVal']].forEach(([k,i,v])=>{$(i).value=r[k];$(v).textContent=r[k]+'/5'});const score=Math.round((r.sleep+r.focus+r.plan)/15*100);$('readyBadge').textContent='آمادگی '+score+'%';$('readyBadge').className='pill '+(score>=75?'good':score>=50?'warn':'bad');$('readyAdvice').textContent=score>=75?'آمادگی مناسب؛ پیش از ورود، حد ضرر و ریسک را دوباره بررسی کن.':score>=50?'آمادگی متوسط؛ حجم و تعداد معاملات را کاهش بده.':'آمادگی پایین؛ بهتر است فعلاً معامله نکنی.'}
+  function renderPsychology(){const completed=app.data.trades.filter(t=>!t.needsPsych),clean=completed.filter(t=>!isMistake(t)),mistakes=completed.filter(isMistake),avg=a=>a.length?a.reduce((s,t)=>s+(Number(t.pnl)||0),0)/a.length:0;const revenge=completed.filter(t=>t.afterLoss==='yes').length;const emotional=completed.filter(t=>t.emotion&&t.emotion!=='آرام و منضبط').length;$('behaviorSummary').innerHTML=`<div class="metric-row"><span>معاملات منضبط</span><b class="positive">${faNum(clean.length)}</b></div><div class="metric-row"><span>معاملات دارای خطا</span><b class="negative">${faNum(mistakes.length)}</b></div><div class="metric-row"><span>میانگین P/L منضبط</span><b class="${avg(clean)>=0?'positive':'negative'}">${fmtMoney(avg(clean))}</b></div><div class="metric-row"><span>میانگین P/L دارای خطا</span><b class="${avg(mistakes)>=0?'positive':'negative'}">${fmtMoney(avg(mistakes))}</b></div><div class="metric-row"><span>ورود بعد از ضرر قبلی</span><b>${faNum(revenge)}</b></div><div class="metric-row"><span>معاملات با هیجان غیرآرام</span><b>${faNum(emotional)}</b></div>`;$('rulesList').innerHTML=app.data.rules.length?app.data.rules.map((r,i)=>`<div class="rule"><span>${esc(r)}</span><button class="btn danger" data-rule-del="${i}">حذف</button></div>`).join(''):'<div class="empty">هنوز قانونی ثبت نشده است.</div>';$('rulesList').querySelectorAll('[data-rule-del]').forEach(b=>b.onclick=async()=>{app.data.rules.splice(Number(b.dataset.ruleDel),1);await persist();renderPsychology()});renderInsights()}
+  function renderInsights(){const done=app.data.trades.filter(t=>!t.needsPsych);const avg=a=>a.length?a.reduce((s,t)=>s+(Number(t.pnl)||0),0)/a.length:0;const insights=[];if(done.length<5)insights.push('برای تحلیل قابل‌اتکاتر، حداقل ۵ معامله را با اطلاعات روان‌شناسی کامل ثبت کن.');else{const after=done.filter(t=>t.afterLoss==='yes'),notAfter=done.filter(t=>t.afterLoss!=='yes');if(after.length>=2&&notAfter.length>=2){const delta=avg(after)-avg(notAfter);insights.push(delta<0?`معاملات بعد از ضرر قبلی به‌طور میانگین ${fmtMoney(Math.abs(delta))} ضعیف‌تر از سایر معاملات بوده‌اند؛ پیش از ورود بعدی وقفه را جدی بگیر.`:`در داده‌های فعلی، عملکرد معاملات بعد از ضرر قبلی بدتر از سایر معاملات نیست؛ همچنان تعداد نمونه را زیر نظر داشته باش.`)}const fomo=done.filter(t=>(t.emotion||'').includes('FOMO')||t.reason==='FOMO و ترس از جا ماندن'),other=done.filter(t=>!fomo.includes(t));if(fomo.length>=2&&other.length>=2){const delta=avg(fomo)-avg(other);insights.push(delta<0?`معاملات دارای FOMO به‌طور میانگین ${fmtMoney(Math.abs(delta))} نتیجه ضعیف‌تری داشته‌اند؛ کیفیت تأیید ستاپ را قبل از ورود بررسی کن.`:`در نمونه فعلی، گروه FOMO افت میانگین مشخصی نسبت به سایر معاملات ندارد.`)}const broken=done.filter(t=>t.ruleStatus&&t.ruleStatus!=='کاملاً رعایت شد'),followed=done.filter(t=>t.ruleStatus==='کاملاً رعایت شد');if(broken.length>=2&&followed.length>=2){insights.push(avg(broken)<avg(followed)?`معاملات با نقض یا خطای پلن، میانگین P/L پایین‌تری از معاملات منطبق با پلن دارند؛ اجرای پلن اولویت اصلاحی مناسبی است.`:`در داده فعلی تفاوت منفی روشنی میان این دو گروه دیده نمی‌شود.`)}const mistakeRate=done.length?done.filter(isMistake).length/done.length:0;if(mistakeRate>.4)insights.push(`حدود ${Math.round(mistakeRate*100)}٪ معاملات تکمیل‌شده برچسب خطای رفتاری دارند؛ روی یک خطای پرتکرار تمرکز کن، نه چند تغییر هم‌زمان.`);const s=stats(done);if(s.dd>0&&s.dd>Math.max(50,Math.abs(s.net)*.75))insights.push('افت تجمعی نسبت به سود/زیان خالص قابل‌توجه است؛ توالی معاملات زیان‌ده و اندازه ریسک را جداگانه بررسی کن.')}if(!insights.length)insights.push('هنوز الگوی رفتاری مشخصی از داده‌ها استخراج نشده است. پس از تکمیل چند معامله دیگر دوباره بررسی کن.');$('smartInsights').innerHTML=insights.map((x,i)=>`<div class="metric-row"><span><b>${faNum(i+1)}.</b> ${esc(x)}</span></div>`).join('')}
+  function renderReports(){const range=$('reportRange').value||'30',cut=range==='all'?0:Date.now()-Number(range)*86400000;const arr=app.data.trades.filter(t=>{const d=safeDate(t.date);return !cut||(d&&d.getTime()>=cut)});const s=stats(arr),done=arr.filter(t=>!t.needsPsych),clean=done.filter(t=>!isMistake(t)),bad=done.filter(isMistake);$('rCount').textContent=faNum(s.n);$('rNet').textContent=fmtMoney(s.net);$('rAvg').textContent=fmtMoney(s.avg);$('rDiscipline').textContent=(done.length?Math.round(clean.length/done.length*100):0)+'%';const mean=a=>a.length?a.reduce((x,t)=>x+Number(t.pnl||0),0)/a.length:0;$('disciplineCompare').innerHTML=`<div class="metric-row"><span>منضبط · تعداد ${faNum(clean.length)}</span><b class="${mean(clean)>=0?'positive':'negative'}">${fmtMoney(mean(clean))} میانگین</b></div><div class="metric-row"><span>دارای خطا · تعداد ${faNum(bad.length)}</span><b class="${mean(bad)>=0?'positive':'negative'}">${fmtMoney(mean(bad))} میانگین</b></div><div class="notice">این مقایسه توصیفی است و به‌تنهایی رابطه علت و معلولی را اثبات نمی‌کند.</div>`;const emo={};done.forEach(t=>{const k=t.emotion||'نامشخص';emo[k]??={n:0,pnl:0};emo[k].n++;emo[k].pnl+=Number(t.pnl)||0});$('emotionBreakdown').innerHTML=Object.entries(emo).length?Object.entries(emo).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`<div class="metric-row"><span>${esc(k)} · ${faNum(v.n)}</span><b class="${v.pnl>=0?'positive':'negative'}">${fmtMoney(v.pnl)}</b></div>`).join(''):'<div class="empty">برای تحلیل، ابتدا وضعیت روان‌شناسی معاملات را تکمیل کن.</div>';const syms={};arr.forEach(t=>{const k=t.symbol||'نامشخص';syms[k]??={n:0,w:0,pnl:0};syms[k].n++;if(Number(t.pnl)>0)syms[k].w++;syms[k].pnl+=Number(t.pnl)||0});$('symbolTable').innerHTML=Object.entries(syms).sort((a,b)=>b[1].pnl-a[1].pnl).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${faNum(v.n)}</td><td>${faNum(v.w)}</td><td>${(v.n?v.w/v.n*100:0).toFixed(1)}%</td><td class="${v.pnl>=0?'positive':'negative'}">${fmtMoney(v.pnl)}</td><td>${fmtMoney(v.pnl/v.n)}</td></tr>`).join('')||'<tr><td colspan="6">داده‌ای وجود ندارد.</td></tr>'}
+  function populateSettings(){$('gasUrl').value=app.data.settings.gasUrl||'';$('apiToken').value=app.data.settings.apiToken||'';$('autoSync').checked=!!app.data.settings.autoSync;$('sheetName').value=app.data.settings.sheetName||'Journal';$('connectionState').textContent=app.data.settings.gasUrl?'آماده اتصال':'تنظیم نشده';$('lastSyncText').textContent=app.data.lastSync?fmtDate(app.data.lastSync):'—'}
+  function updateSyncUI(){const synced=!!app.data.lastSync;$('syncDot').classList.toggle('off',!synced);$('syncStatus').textContent=synced?'آخرین دریافت: '+fmtDate(app.data.lastSync):'همگام‌سازی انجام نشده';$('lastSyncText').textContent=synced?fmtDate(app.data.lastSync):'—';$('connectionState').textContent=app.data.settings.gasUrl?'آماده اتصال':'تنظیم نشده'}
+  function getByAliases(row,aliases){const entries=Object.entries(row||{});for(const alias of aliases){const k=normalize(alias);const hit=entries.find(([h])=>normalize(h)===k);if(hit&&hit[1]!==''&&hit[1]!==null&&hit[1]!==undefined)return hit[1]}return null}
+  function toNumber(v){if(typeof v==='number')return v;let s=String(v??'').trim().replace(/,/g,'').replace(/[$€£¥\s]/g,'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));const n=Number(s);return Number.isFinite(n)?n:0}
+  function sideValue(v){const s=String(v??'').toLowerCase();if(['buy','0','شراء','خرید','long','شراء'].includes(s)||s.includes('buy'))return 'Buy';if(['sell','1','فروش','short'].includes(s)||s.includes('sell'))return 'Sell';return String(v||'—')}
+  function hashKey(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
+  function normalizeSheetTrade(row){const ticket=getByAliases(row,['ticket','ticket_id','deal','deal_id','trade_id','id','position_id','position','شناسه','تیکت','شماره معامله']);const account=getByAliases(row,['account','login','account_login','شماره حساب'])||'';const symbol=getByAliases(row,['symbol','sym','نماد','جفت ارز','جفت‌ارز'])||'UNKNOWN';const side=sideValue(getByAliases(row,['type','side','direction','deal_type','نوع','جهت']));const lots=toNumber(getByAliases(row,['volume','lots','lot','size','حجم']));const profit=getByAliases(row,['net_profit','net pnl','net_pnl','pnl','profit_net','سود خالص']);let pnl=profit!==null?toNumber(profit):toNumber(getByAliases(row,['profit','سود','profit_usd']))+toNumber(getByAliases(row,['commission','کمیسیون']))+toNumber(getByAliases(row,['swap','سواپ']));const date=getByAliases(row,['close_time','close time','close_date','closed_at','time','date','تاریخ بسته شدن','تاریخ','زمان'])||getByAliases(row,['open_time','open time','زمان ورود']);const openTime=getByAliases(row,['open_time','open time','وقت ورود']);const entry=getByAliases(row,['open_price','entry','entry_price','price_open','قیمت ورود']);const close=getByAliases(row,['close_price','exit','exit_price','price_close','قیمت خروج']);const stable= ticket!==null?String(ticket):[symbol,side,lots,String(openTime||date||''),String(entry??'')].join('|');const sourceKey='mt5:'+String(account)+':'+stable;return {id:'mt5_'+hashKey(sourceKey),source:'mt5',sourceKey,account:String(account),ticket:ticket===null?'':String(ticket),symbol:String(symbol).toUpperCase(),side,lots,pnl,date:date instanceof Date?date.toISOString():String(date||new Date().toISOString()),openTime:openTime?String(openTime):'',entryPrice:entry===null?'':toNumber(entry),closePrice:close===null?'':toNumber(close),commission:toNumber(getByAliases(row,['commission','کمیسیون'])),swap:toNumber(getByAliases(row,['swap','سواپ'])),needsPsych:true,raw:row}}
+  function mergeTrades(rows){const map=new Map(app.data.trades.map(t=>[t.sourceKey||t.id,t]));let added=0,updated=0;for(const row of rows){const t=normalizeSheetTrade(row);if((app.data.ignoredSourceKeys||[]).includes(t.sourceKey))continue;const old=map.get(t.sourceKey);if(old){Object.assign(old,{symbol:t.symbol,side:t.side,lots:t.lots,pnl:t.pnl,date:t.date,openTime:t.openTime,entryPrice:t.entryPrice,closePrice:t.closePrice,commission:t.commission,swap:t.swap,ticket:t.ticket,raw:t.raw});updated++}else{map.set(t.sourceKey,t);added++}}app.data.trades=[...map.values()].sort((a,b)=>(safeDate(b.date)?.getTime()||0)-(safeDate(a.date)?.getTime()||0));return {added,updated,total:rows.length}}
+  function jsonp(url,timeout=25000){return new Promise((resolve,reject)=>{const cb='__ztSheetCallback';let done=false;const script=document.createElement('script');const timer=setTimeout(()=>finish(new Error('زمان دریافت اطلاعات تمام شد.')),timeout);function finish(err,data){if(done)return;done=true;clearTimeout(timer);delete window[cb];script.remove();err?reject(err):resolve(data)}window[cb]=data=>finish(null,data);script.onerror=()=>finish(new Error('دریافت از Google Apps Script ناموفق بود. آدرس، دسترسی و کلید API را بررسی کن.'));script.src=url+(url.includes('?')?'&':'?')+'callback='+cb+'&_='+Date.now();document.head.appendChild(script)})}
+  async function syncFromSheet(){if(app.syncing)return;const url=String(app.data.settings.gasUrl||'').trim(),token=String(app.data.settings.apiToken||'').trim();if(!url){toast('ابتدا آدرس Apps Script را در تنظیمات وارد کن.');switchView('settings');return}if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(?:\?.*)?$/.test(url)){toast('آدرس وب‌اپ باید با https://script.google.com/macros/s/.../exec شروع شود.');return}app.syncing=true;$('syncStatus').textContent='در حال دریافت…';$('syncBtn').disabled=true;try{const endpoint=new URL(url);endpoint.searchParams.set('action','journal');if(token)endpoint.searchParams.set('token',token);endpoint.searchParams.set('sheet',app.data.settings.sheetName||'Journal');const data=await jsonp(endpoint.toString());if(!data||data.status!=='success'||!Array.isArray(data.trades))throw new Error(data?.message||'ساختار پاسخ شیت معتبر نیست.');const result=mergeTrades(data.trades);app.data.lastSync=new Date().toISOString();app.data.lastSyncCount=data.trades.length;await persist();renderAll();toast(`همگام‌سازی انجام شد؛ ${faNum(result.added)} جدید، ${faNum(result.updated)} به‌روزرسانی.`)}catch(e){$('syncStatus').textContent='خطا در همگام‌سازی';toast('خطای اتصال: '+e.message)}finally{app.syncing=false;$('syncBtn').disabled=false}}
+  function exportCSV(){const headers=['id','source','ticket','symbol','side','lots','pnl','date','emotion','ruleStatus','stress','afterLoss','reason','notes'];const lines=[headers.join(',')];app.data.trades.forEach(t=>lines.push(headers.map(k=>'"'+String(t[k]??'').replace(/"/g,'""')+'"').join(',')));downloadBlob('\ufeff'+lines.join('\r\n'),'zehn-trader-trades.csv','text/csv;charset=utf-8');toast('فایل CSV ساخته شد. توجه: CSV رمزگذاری‌شده نیست.')}
+  async function addManualTrade(e){e.preventDefault();const symbol=$('fSymbol').value.trim().toUpperCase();const lots=Number($('fLots').value),pnl=Number($('fPnl').value);if(!symbol||!Number.isFinite(lots)||lots<=0||!Number.isFinite(pnl)){toast('نماد، حجم و سود/زیان را بررسی کن.');return}const t={id:'manual_'+crypto.randomUUID(),source:'manual',sourceKey:'manual_'+crypto.randomUUID(),ticket:'',symbol,side:$('fSide').value,lots,pnl,date:$('fDate').value?new Date($('fDate').value).toISOString():new Date().toISOString(),entryPrice:$('fEntry').value?Number($('fEntry').value):'',notes:$('fNotes').value.trim(),needsPsych:true};app.data.trades.unshift(t);$('fPnl').value='';$('fNotes').value='';await persist();renderAll();toast('معامله ثبت شد؛ وضعیت روان‌شناسی آن را هم تکمیل کن.')}
+  function startBreathing(){if(app.breathTimer)return;const phases=[['دم',true],['نگه‌دار',false],['بازدم',false],['مکث',false]];let phase=0,sec=4;const paint=()=>{$('breathPhase').textContent=phases[phase][0];$('breathSeconds').textContent=sec+'s';$('breathCircle').classList.toggle('expand',phase===0);$('breathCircle').classList.toggle('contract',phase===2)};paint();app.breathTimer=setInterval(()=>{sec--;if(sec<=0){phase=(phase+1)%4;sec=4}paint()},1000);$('breathStart').disabled=true}
+  function stopBreathing(){clearInterval(app.breathTimer);app.breathTimer=null;$('breathPhase').textContent='آماده';$('breathSeconds').textContent='4s';$('breathCircle').classList.remove('expand','contract');$('breathStart').disabled=false}
+  async function startTilt(minutes){app.data.tiltEnd=Date.now()+minutes*60000;await persist();runTiltTimer();toast('وقفه معاملاتی فعال شد.')}
+  async function stopTilt(){app.data.tiltEnd=0;await persist();runTiltTimer()}
+  function runTiltTimer(){clearInterval(app.tiltTimer);const tick=()=>{const left=Math.max(0,(app.data?.tiltEnd||0)-Date.now());if(!left){$('tiltDisplay').textContent='00:00';clearInterval(app.tiltTimer);app.tiltTimer=null;return}const sec=Math.ceil(left/1000);$('tiltDisplay').textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0')};tick();if(app.data.tiltEnd>Date.now())app.tiltTimer=setInterval(tick,1000)}
+  async function addRule(){const v=$('newRule').value.trim();if(!v)return;app.data.rules.push(v);$('newRule').value='';await persist();renderPsychology();toast('قانون اضافه شد.')}
+  function bindEvents(){
+    $('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginError').textContent='';const p=$('password').value;try{if(!localStorage.getItem(AUTH_KEY)){if(p.length<8)throw new Error('رمز عبور باید حداقل ۸ کاراکتر باشد.');if(p!==$('confirmPassword').value)throw new Error('تکرار رمز عبور یکسان نیست.');await setupVault(p)}else await unlockVault(p);await showApp()}catch(err){$('loginError').textContent=err.message}});
+    $('passkeyLogin').onclick=async()=>{ $('loginError').textContent='';try{await unlockWithPasskey()}catch(err){$('loginError').textContent=err.message||'ورود با Passkey انجام نشد.'}};
+    $('restoreFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const p=prompt('رمز عبور فایل پشتیبان را وارد کن:');if(!p)return;try{await restoreBackup(f,p);await showApp();toast('پشتیبان با موفقیت بازیابی شد.')}catch(err){$('loginError').textContent=err.message}e.target.value=''});
+    $('settingsRestore').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const p=prompt('رمز عبور فایل پشتیبان را وارد کن:');if(!p)return;try{await restoreBackup(f,p);await showApp();toast('پشتیبان بازیابی شد.')}catch(err){toast(err.message)}e.target.value=''});
+    $('sideNav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)switchView(b.dataset.view)});$('mobileNav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)switchView(b.dataset.view)});document.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.goto)));
+    $('themeBtn').onclick=()=>{const light=!document.body.classList.contains('light');localStorage.setItem(THEME_KEY,light?'light':'dark');applyTheme();drawChart()};$('lockBtn').onclick=async()=>{await persist();await lockApp()};$('syncBtn').onclick=syncFromSheet;$('syncNow').onclick=syncFromSheet;$('backupBtn').onclick=exportBackup;$('settingsBackup').onclick=exportBackup;$('csvBtn').onclick=exportCSV;
+    $('saveSettings').onclick=async()=>{app.data.settings={gasUrl:$('gasUrl').value.trim(),apiToken:$('apiToken').value.trim(),autoSync:$('autoSync').checked,sheetName:$('sheetName').value.trim()||'Journal'};await persist();populateSettings();toast('تنظیمات ذخیره شد.')};
+    $('registerPasskey').onclick=async()=>{try{await registerPasskey()}catch(err){toast(err.message||'فعال‌سازی Passkey ناموفق بود.')}};
+    $('removePasskey').onclick=removePasskey;
+    $('tradeForm').addEventListener('submit',addManualTrade);$('tradeSearch').addEventListener('input',renderTrades);$('tradeSort').addEventListener('change',renderTrades);$('tradeFilters').addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;app.currentFilter=b.dataset.filter;$('tradeFilters').querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderTrades()});
+    $('psychForm').addEventListener('submit',savePsych);$('closePsych').onclick=closePsych;$('cancelPsych').onclick=closePsych;$('psychModal').addEventListener('click',e=>{if(e.target===$('psychModal'))closePsych()});$('pStress').oninput=()=> $('stressValue').textContent=$('pStress').value+'/5';
+    [['sleepRange','sleep'],['focusRange','focus'],['planRange','plan']].forEach(([id,k])=>$(id).addEventListener('input',async()=>{app.data.readiness[k]=Number($(id).value);updateReadinessUI();await persist()}));$('openPendingBtn').onclick=()=>{const t=app.data.trades.find(x=>x.needsPsych);if(t)openPsych(t.id)};
+    $('breathStart').onclick=startBreathing;$('breathStop').onclick=stopBreathing;document.querySelectorAll('[data-tilt]').forEach(b=>b.onclick=()=>startTilt(Number(b.dataset.tilt)));$('tiltStop').onclick=stopTilt;$('addRule').onclick=addRule;$('newRule').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addRule()}});$('reportRange').onchange=renderReports;
+    $('wipeData').onclick=async()=>{if(!confirm('تمام معاملات، قوانین و تنظیمات محلی این دستگاه پاک شوند؟ این کار برگشت‌ناپذیر است.'))return;if(!confirm('برای تأیید نهایی، مطمئنی که پشتیبان لازم را گرفته‌ای؟'))return;localStorage.removeItem(AUTH_KEY);localStorage.removeItem(VAULT_KEY);await clearRememberedSession();app.key=null;app.data=null;showLogin(true)};
+    window.addEventListener('resize',()=>{clearTimeout(app.chartResize);app.chartResize=setTimeout(drawChart,120)});
+  }
+  function initActivityTracking(){['pointerdown','keydown','touchstart','click'].forEach(evt=>document.addEventListener(evt,()=>touchSession(),{passive:true}));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&app.key){if(sessionExpired())lockForInactivity();else touchSession(true)}})}
+  async function init(){bindEvents();initActivityTracking();if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});if(localStorage.getItem(AUTH_KEY)){const resumed=await resumeRememberedSession();if(resumed)await showApp({remember:false});else showLogin(false)}else showLogin(true)}
+  init().catch(err=>{console.error(err);showLogin(Boolean(!localStorage.getItem(AUTH_KEY))) });
+})();
+</script>
+</body>
+</html>
