@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#090d16" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ذهن تریدر" />
+  <title>ذهن تریدر | ژورنال معاملاتی و مدیریت روان</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-body: #090d16;
+      --bg-surface: #111827;
+      --bg-surface-2: #172033;
+      --bg-glass: rgba(17, 24, 39, 0.85);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: rgba(148, 163, 184, 0.16);
+      --accent: #10b981;
+      --accent-hover: #059669;
+      --accent-soft: rgba(16, 185, 129, 0.14);
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.15);
+      --warn: #f59e0b;
+      --warn-soft: rgba(245, 158, 11, 0.15);
+      --info: #38bdf8;
+      --info-soft: rgba(56, 189, 248, 0.15);
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --nav-h: 72px;
+    }
+
+    body.light-mode {
+      --bg-body: #f1f5f9;
+      --bg-surface: #ffffff;
+      --bg-surface-2: #f8fafc;
+      --bg-glass: rgba(255, 255, 255, 0.9);
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --border-color: rgba(15, 23, 42, 0.12);
+      --shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .app-shell {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 16px 14px calc(var(--nav-h) + 28px);
+    }
+
+    /* Lock Screen */
+    .lock-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      background: radial-gradient(circle at top right, rgba(16, 185, 129, 0.16), transparent 50%), var(--bg-body);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .lock-card {
+      width: 100%;
+      max-width: 410px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 26px 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .lock-logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #10b981, #0ea5e9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 14px;
+      color: #fff;
+      font-weight: 800;
+      font-size: 22px;
+    }
+
+    /* Header */
+    .topbar {
+      position: sticky;
+      top: 10px;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-weight: 800;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface-2);
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 15px;
+      transition: 0.18s ease;
+    }
+
+    .icon-btn:hover {
+      border-color: var(--accent);
+    }
+
+    .icon-btn.syncing {
+      border-color: var(--info);
+      color: var(--info);
+      animation: pulseSync 1.1s infinite;
+    }
+
+    @keyframes pulseSync {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(0.95); }
+    }
+
+    /* Cards & Layout */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin: 0 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    @media (min-width: 720px) {
+      .stats-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    .stat-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 15px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .stat-val {
+      font-size: 20px;
+      font-weight: 800;
+      direction: ltr;
+      text-align: right;
+    }
+
+    .stat-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 5px;
+    }
+
+    .pos { color: var(--accent); }
+    .neg { color: var(--danger); }
+
+    /* Banner */
+    .alert-banner {
+      background: var(--warn-soft);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .alert-banner.danger {
+      background: var(--danger-soft);
+      border-color: rgba(239, 68, 68, 0.35);
+    }
+
+    /* Form Controls */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    @media (min-width: 640px) {
+      .form-grid.two-col {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .field label {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 11px 13px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface-2);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 13.5px;
+      outline: none;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+
+    input[type="range"] {
+      padding: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 11px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-warn {
+      background: var(--warn);
+      color: #090d16;
+    }
+
+    .btn-danger {
+      background: var(--danger-soft);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-ghost {
+      background: var(--bg-surface-2);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+
+    .btn-sm {
+      padding: 7px 11px;
+      font-size: 12px;
+      border-radius: 8px;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* Chips & Tags */
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .chip {
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface-2);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .chip.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .badge-warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .badge-info {
+      background: var(--info-soft);
+      color: var(--info);
+    }
+
+    .badge-ok {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .badge-bad {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    /* Trade Cards */
+    .trade-card {
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+
+    .trade-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .trade-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .trade-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    /* Breathing Circle */
+    .breath-box {
+      text-align: center;
+      padding: 16px;
+    }
+
+    .breath-circle {
+      width: 132px;
+      height: 132px;
+      border-radius: 50%;
+      margin: 12px auto;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.35), rgba(56, 189, 248, 0.15));
+      border: 2px solid var(--accent);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.9s ease-in-out, border-color 0.4s ease;
+    }
+
+    .breath-circle.expand {
+      transform: scale(1.18);
+      border-color: var(--info);
+    }
+
+    .breath-circle.contract {
+      transform: scale(0.88);
+      border-color: var(--warn);
+    }
+
+    .timer-display {
+      font-size: 28px;
+      font-weight: 800;
+      direction: ltr;
+      margin: 10px 0;
+    }
+
+    /* Bottom Nav */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-h);
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border-color);
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      z-index: 50;
+    }
+
+    .nav-item {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .nav-item.active {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .nav-dot {
+      position: absolute;
+      top: 9px;
+      right: 26%;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--warn);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.68);
+      z-index: 120;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-box {
+      width: 100%;
+      max-width: 480px;
+      max-height: 88vh;
+      overflow-y: auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: calc(var(--nav-h) + 14px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid var(--border-color);
+      padding: 10px 16px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      z-index: 200;
+      box-shadow: var(--shadow);
+      display: none;
+      white-space: nowrap;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    code.block-code {
+      display: block;
+      background: var(--bg-body);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-size: 11.5px;
+      direction: ltr;
+      text-align: left;
+      overflow-x: auto;
+      white-space: pre;
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <!-- Lock Screen -->
+  <div id="lockScreen" class="lock-overlay">
+    <div class="lock-card">
+      <div class="lock-logo">ZT</div>
+      <h2 style="text-align:center; margin:0 0 6px; font-size:18px;">ورود امن به ذهن تریدر</h2>
+      <p style="text-align:center; margin:0 0 18px; font-size:12px; color:var(--text-muted); line-height:1.6;">
+        برای دسترسی به ژورنال معاملاتی و وضعیت روانی، وارد شوید.
+      </p>
+
+      <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+        <div class="field">
+          <label for="loginUser">نام کاربری</label>
+          <input id="loginUser" type="text" autocomplete="username" placeholder="behnam" required />
+        </div>
+        <div class="field">
+          <label for="loginPass">رمز عبور</label>
+          <input id="loginPass" type="password" autocomplete="current-password" placeholder="1234" required />
+        </div>
+        <div id="loginError" style="color:var(--danger); font-size:12px; margin-bottom:10px; min-height:18px;"></div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%; margin-bottom:10px;">
+          ورود به ژورنال
+        </button>
+      </form>
+
+      <button id="biometricLoginBtn" type="button" class="btn btn-ghost" style="width:100%; margin-bottom:12px;" onclick="unlockWithBiometric()">
+        ورود با اثر انگشت / بیومتریک
+      </button>
+
+      <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); border-top:1px solid var(--border-color); padding-top:10px;">
+        <span>کاربر پیش‌فرض: <strong>behnam</strong></span>
+        <span>رمز پیش‌فرض: <strong>1234</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="mainApp" class="app-shell hidden">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">ZT</div>
+        <div>
+          <div class="brand-title">ذهن تریدر <span class="badge badge-info">MT5 Sync</span></div>
+          <div class="brand-sub" id="syncStatusText">آماده همگام‌سازی</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button type="button" id="syncTopBtn" class="icon-btn" title="همگام‌سازی گوگل شیت" onclick="syncFromSheet()">↻</button>
+        <button type="button" class="icon-btn" title="خروجی JSON" onclick="exportJSON()">⬇</button>
+        <button type="button" class="icon-btn" title="تغییر پوسته" onclick="toggleTheme()">☀</button>
+        <button type="button" class="icon-btn" title="قفل برنامه" onclick="lockApp()">🔒</button>
+      </div>
+    </header>
+
+    <!-- Pending Psychology Banner -->
+    <div id="pendingBanner" class="alert-banner hidden">
+      <div>
+        <strong style="font-size:13px;">معامله دریافت‌شده از MT5 منتظر تکمیل روانشناسی است</strong>
+        <div id="pendingBannerDesc" style="font-size:12px; color:var(--text-muted); margin-top:2px;"></div>
+      </div>
+      <button type="button" class="btn btn-warn btn-sm" onclick="openNextPendingPsych()">مشاهده و تکمیل سریع</button>
+    </div>
+
+    <!-- TAB 1: DASHBOARD -->
+    <section id="tab-dashboard" class="tab-view">
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-label">نرخ برد (Win Rate)</div>
+          <div id="statWinRate" class="stat-val">0%</div>
+          <div id="statWinLoss" class="stat-sub">0 برد / 0 باخت</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">سود / زیان خالص ($)</div>
+          <div id="statNetPnl" class="stat-val">$0.00</div>
+          <div id="statTotalTrades" class="stat-sub">بر اساس 0 معامله ثبت‌شده</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">معاملات بدون خطای روانی</div>
+          <div id="statCleanRate" class="stat-val">0%</div>
+          <div id="statPsychAvg" class="stat-sub">میانگین امتیاز روان: 0/100</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">فاکتور سود (Profit Factor)</div>
+          <div id="statPF" class="stat-val">0.00</div>
+          <div class="stat-sub">نسبت مجموع سود به مجموع زیان</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">
+          <span>سنجش آمادگی ذهنی قبل از ترید</span>
+          <span id="readinessBadge" class="badge badge-ok">آمادگی: 100%</span>
+        </h3>
+
+        <div class="field">
+          <label>کیفیت خواب و انرژی جسمی: <strong id="valSleep">4</strong> / 5</label>
+          <input id="rngSleep" type="range" min="1" max="5" value="4" oninput="updateReadiness()" />
+        </div>
+
+        <div class="field">
+          <label>تمرکز ذهنی و آرامش محیط: <strong id="valFocus">4</strong> / 5</label>
+          <input id="rngFocus" type="range" min="1" max="5" value="4" oninput="updateReadiness()" />
+        </div>
+
+        <div class="field">
+          <label>پایبندی و آمادگی اجرای پلن: <strong id="valPlan">5</strong> / 5</label>
+          <input id="rngPlan" type="range" min="1" max="5" value="5" oninput="updateReadiness()" />
+        </div>
+
+        <div id="readinessAdvice" class="badge badge-ok" style="margin-top:6px;">وضعیت ذهنی مطلوب برای شروع جلسه معاملاتی</div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">نمودار سود/زیان و وضعیت روانی معاملات</h3>
+        <canvas id="pnlChart" height="190"></canvas>
+      </div>
+    </section>
+
+    <!-- TAB 2: ADD TRADE -->
+    <section id="tab-add" class="tab-view hidden">
+      <div class="card">
+        <h3 class="card-title">ثبت دستی معامله و وضعیت روانشناسی</h3>
+        <form id="manualTradeForm" onsubmit="saveManualTrade(event)">
+          <div class="form-grid two-col">
+            <div class="field">
+              <label for="mSymbol">نماد معاملاتی</label>
+              <input id="mSymbol" type="text" value="XAUUSD" required />
+            </div>
+            <div class="field">
+              <label for="mSide">جهت معامله</label>
+              <select id="mSide">
+                <option value="Buy">Buy (خرید)</option>
+                <option value="Sell">Sell (فروش)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="mLots">حجم (Lot)</label>
+              <input id="mLots" type="number" step="0.01" value="0.05" required />
+            </div>
+            <div class="field">
+              <label for="mPnl">سود یا زیان دلاری ($)</label>
+              <input id="mPnl" type="number" step="0.01" placeholder="مثلاً 25 یا -15" required />
+            </div>
+          </div>
+
+          <div class="form-grid two-col">
+            <div class="field">
+              <label for="mEmotion">احساس غالب حین معامله</label>
+              <select id="mEmotion">
+                <option value="آرام و منضبط">آرام و منضبط</option>
+                <option value="FOMO / عجله">FOMO / عجله</option>
+                <option value="انتقامی / خشم">انتقامی / خشم</option>
+                <option value="ترس / تردید">ترس / تردید</option>
+                <option value="طمع / زیاده‌روی">طمع / زیاده‌روی</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="mRule">رعایت پلن و حد ضرر</label>
+              <select id="mRule">
+                <option value="کاملاً رعایت شد">کاملاً رعایت شد</option>
+                <option value="خطای جزئی">خطای جزئی</option>
+                <option value="نقض حد ضرر یا حجم">نقض حد ضرر یا حجم</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="mNotes">یادداشت روانشناختی و تحلیلی</label>
+            <textarea id="mNotes" rows="3" placeholder="چرا وارد شدم؟ چه حسی داشتم؟"></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width:100%;">ثبت معامله در ژورنال</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- TAB 3: HISTORY -->
+    <section id="tab-history" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title">
+          <span>تاریخچه ژورنال معاملات</span>
+          <button type="button" class="btn btn-danger btn-sm" onclick="clearAllTrades()">حذف همه معاملات</button>
+        </div>
+
+        <div class="field">
+          <input id="searchSymbolInput" type="text" placeholder="جستجوی نماد (مثلاً XAUUSD یا BTCUSD)..." oninput="renderTrades()" />
+        </div>
+
+        <div class="chip-group" id="filterChips">
+          <button type="button" class="chip active" data-filter="all" onclick="setFilter('all', this)">همه معاملات</button>
+          <button type="button" class="chip" data-filter="pending" onclick="setFilter('pending', this)">نیاز به تکمیل روانشناسی</button>
+          <button type="button" class="chip" data-filter="win" onclick="setFilter('win', this)">سودده</button>
+          <button type="button" class="chip" data-filter="loss" onclick="setFilter('loss', this)">زیان‌ده</button>
+          <button type="button" class="chip" data-filter="mistake" onclick="setFilter('mistake', this)">دارای خطای روانی</button>
+        </div>
+
+        <div id="tradesList"></div>
+      </div>
+    </section>
+
+    <!-- TAB 4: MIND CONTROL -->
+    <section id="tab-mind" class="tab-view hidden">
+      <div class="card">
+        <h3 class="card-title">تنفس جعبه‌ای (۴-۴-۴-۴) برای کاهش استرس</h3>
+        <div class="breath-box">
+          <div id="breathCircle" class="breath-circle">
+            <div id="breathPhase" style="font-size:15px; font-weight:800;">آماده</div>
+            <div id="breathSec" style="font-size:22px; font-weight:800; direction:ltr;">4s</div>
+          </div>
+          <div class="btn-row" style="justify-content:center;">
+            <button type="button" id="breathToggleBtn" class="btn btn-primary btn-sm" onclick="toggleBreathing()">شروع تنفس</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">قفل ضد معامله انتقامی (Tilt Lock)</h3>
+        <p style="font-size:12.5px; color:var(--text-muted); margin-top:0;">
+          پس از ضرر یا هیجان بالا، یک وقفه اجباری فعال کنید تا از تصمیم‌های احساسی جلوگیری شود.
+        </p>
+        <div id="tiltTimerDisplay" class="timer-display">00:00</div>
+        <div class="btn-row">
+          <button type="button" class="btn btn-warn btn-sm" onclick="startTiltLock(15)">قفل ۱۵ دقیقه‌ای</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="startTiltLock(30)">قفل ۳۰ دقیقه‌ای</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="stopTiltLock()">لغو قفل</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">قوانین شخصی ترید</h3>
+        <div class="field" style="display:flex; gap:8px; flex-direction:row;">
+          <input id="newRuleInput" type="text" placeholder="قانون جدید (مثلاً: پس از ۲ باخت متوالی توقف)" />
+          <button type="button" class="btn btn-primary btn-sm" onclick="addPersonalRule()">افزودن</button>
+        </div>
+        <div id="rulesContainer"></div>
+      </div>
+    </section>
+
+    <!-- TAB 5: MT5 & SECURITY SETTINGS -->
+    <section id="tab-mt5" class="tab-view hidden">
+      <div class="card">
+        <h3 class="card-title">اتصال خودکار به گوگل شیت (متاتریدر ۵)</h3>
+        <div class="field">
+          <label for="gasUrlInput">لینک وب‌اپ Google Apps Script (/exec)</label>
+          <input id="gasUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
+        </div>
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--text-main);">
+            <input id="autoSyncChk" type="checkbox" style="width:auto;" />
+            <span>همگام‌سازی خودکار پس از ورود به برنامه</span>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" onclick="saveMt5Settings()">ذخیره تنظیمات</button>
+          <button type="button" class="btn btn-ghost" onclick="syncFromSheet()">همگام‌سازی الان</button>
+          <button type="button" class="btn btn-ghost" onclick="exportCSV()">خروجی CSV</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">امنیت، رمز عبور و اثر انگشت</h3>
+        <div class="form-grid two-col">
+          <div class="field">
+            <label for="secUserInput">نام کاربری</label>
+            <input id="secUserInput" type="text" />
+          </div>
+          <div class="field">
+            <label for="secPassInput">رمز عبور جدید</label>
+            <input id="secPassInput" type="password" placeholder="حداقل ۴ کاراکتر" />
+          </div>
+        </div>
+        <div class="btn-row" style="margin-bottom:12px;">
+          <button type="button" class="btn btn-primary btn-sm" onclick="updateCredentials()">ذخیره نام کاربری و رمز</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="registerBiometric()">ثبت اثر انگشت در این دستگاه</button>
+        </div>
+        <div id="bioStatusText" style="font-size:12px; color:var(--text-muted);"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">کد doGet برای دریافت معاملات از شیت Journal</h3>
+        <p style="font-size:12px; color:var(--text-muted); margin-top:0;">
+          در صورت نیاز به بررسی یا به‌روزرسانی تابع خواندن اطلاعات در Apps Script:
+        </p>
+        <code class="block-code">function doGet(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Journal");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "error", trades: [] })).setMimeType(ContentService.MimeType.JSON);
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length &lt;= 1) return ContentService.createTextOutput(JSON.stringify({ status: "success", trades: [] })).setMimeType(ContentService.MimeType.JSON);
+  var headers = rows[0];
+  var trades = [];
+  for (var i = 1; i &lt; rows.length; i++) {
+    var obj = {};
+    for (var j = 0; j &lt; headers.length; j++) obj[String(headers[j]).trim()] = rows[i][j];
+    trades.push(obj);
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: "success", trades: trades })).setMimeType(ContentService.MimeType.JSON);
+}</code>
+      </div>
+    </section>
+  </div>
+
+  <!-- Bottom Navigation -->
+  <nav id="bottomNav" class="bottom-nav hidden">
+    <button type="button" class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard', this)">
+      <span>📊</span>
+      <span>داشبورد</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="add" onclick="switchTab('add', this)">
+      <span>➕</span>
+      <span>ثبت دستی</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="history" onclick="switchTab('history', this)">
+      <span id="histDot" class="nav-dot hidden"></span>
+      <span>📜</span>
+      <span>تاریخچه</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="mind" onclick="switchTab('mind', this)">
+      <span>🧘</span>
+      <span>کنترل روان</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="mt5" onclick="switchTab('mt5', this)">
+      <span>🔄</span>
+      <span>اتصال MT5</span>
+    </button>
+  </nav>
+
+  <!-- Psychology Completion Modal -->
+  <div id="psychModal" class="modal-backdrop" onclick="if(event.target===this)closePsychModal()">
+    <div class="modal-box">
+      <h3 style="margin:0 0 12px; font-size:16px;">تکمیل وضعیت روانشناسی معامله</h3>
+      <div id="psychTradeSummary" class="badge badge-info" style="margin-bottom:12px;"></div>
+
+      <div class="field">
+        <label for="pEmotion">احساس غالب حین معامله</label>
+        <select id="pEmotion">
+          <option value="آرام و منضبط">آرام و منضبط</option>
+          <option value="FOMO / عجله">FOMO / عجله</option>
+          <option value="انتقامی / خشم">انتقامی / خشم</option>
+          <option value="ترس / تردید">ترس / تردید</option>
+          <option value="طمع / زیاده‌روی">طمع / زیاده‌روی</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="pRule">رعایت پلن و حد ضرر</label>
+        <select id="pRule">
+          <option value="کاملاً رعایت شد">کاملاً رعایت شد</option>
+          <option value="خطای جزئی">خطای جزئی</option>
+          <option value="نقض حد ضرر یا حجم">نقض حد ضرر یا حجم</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="pNotes">یادداشت روانشناختی</label>
+        <textarea id="pNotes" rows="3" placeholder="توضیح کوتاه درباره ورود، خروج و حال روحی..."></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" style="flex:1;" onclick="savePsychModal()">ذخیره وضعیت روان</button>
+        <button type="button" class="btn btn-ghost" onclick="closePsychModal()">بستن</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const STORAGE_KEYS = {
+      AUTH: "zt_auth_v2",
+      TRADES: "zt_trades_v2",
+      SETTINGS: "zt_settings_v2",
+      RULES: "zt_rules_v2",
+      TILT_END: "zt_tilt_end_v2",
+      THEME: "zt_theme_v2"
+    };
+
+    const DEFAULT_AUTH = {
+      username: "behnam",
+      password: String(1234),
+      bioCredentialId: null
+    };
+
+    const DEFAULT_SETTINGS = {
+      gasUrl: "",
+      autoSync: true
+    };
+
+    const DEFAULT_RULES = [
+      "قبل از ورود، روند و فیلتر EMA 60 را بررسی می‌کنم.",
+      "هیچ‌گاه حجم را پس از ضرر برای جبران سریع دو برابر نمی‌کنم.",
+      "حد ضرر را دقیق و منطقی قرار می‌دهم و جابه‌جا نمی‌کنم."
+    ];
+
+    let state = {
+      unlocked: false,
+      auth: loadJson(STORAGE_KEYS.AUTH, DEFAULT_AUTH),
+      settings: loadJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS),
+      trades: loadJson(STORAGE_KEYS.TRADES, []),
+      rules: loadJson(STORAGE_KEYS.RULES, DEFAULT_RULES),
+      filter: "all",
+      editingTradeId: null,
+      pnlChart: null,
+      breathTimer: null,
+      tiltTimer: null
+    };
+
+    function loadJson(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return JSON.parse(JSON.stringify(fallback));
+        return Object.assign(JSON.parse(JSON.stringify(fallback)), JSON.parse(raw));
+      } catch (e) {
+        return JSON.parse(JSON.stringify(fallback));
+      }
+    }
+
+    function saveJson(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {}
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.style.display = "block";
+      clearTimeout(window._toastTimeout);
+      window._toastTimeout = setTimeout(() => {
+        el.style.display = "none";
+      }, 2800);
+    }
+
+    function normalizeDigits(str) {
+      const persian = "۰۱۲۳۴۵۶۷۸۹";
+      const arabic = "٠١٢٣٤٥٦٧٨٩";
+      return String(str || "")
+        .replace(/[۰-۹]/g, d => String(persian.indexOf(d)))
+        .replace(/[٠-٩]/g, d => String(arabic.indexOf(d)))
+        .trim();
+    }
+
+    /* Authentication */
+    function handleLoginSubmit(event) {
+      event.preventDefault();
+      const userInput = normalizeDigits(document.getElementById("loginUser").value).toLowerCase();
+      const passInput = normalizeDigits(document.getElementById("loginPass").value);
+      const errEl = document.getElementById("loginError");
+
+      const expectedUser = normalizeDigits(state.auth.username || "behnam").toLowerCase();
+      const expectedPass = normalizeDigits(state.auth.password || "1234");
+
+      if (userInput === expectedUser && passInput === expectedPass) {
+        errEl.textContent = "";
+        grantAccess();
+      } else {
+        errEl.textContent = "نام کاربری یا رمز عبور اشتباه است.";
+      }
+    }
+
+    function grantAccess() {
+      state.unlocked = true;
+      document.getElementById("lockScreen").classList.add("hidden");
+      document.getElementById("mainApp").classList.remove("hidden");
+      document.getElementById("bottomNav").classList.remove("hidden");
+      populateSettingsInputs();
+      renderAll();
+      if (state.settings.autoSync && state.settings.gasUrl) {
+        syncFromSheet(true);
+      }
+    }
+
+    function lockApp() {
+      state.unlocked = false;
+      document.getElementById("loginPass").value = "";
+      document.getElementById("loginError").textContent = "";
+      document.getElementById("mainApp").classList.add("hidden");
+      document.getElementById("bottomNav").classList.add("hidden");
+      document.getElementById("lockScreen").classList.remove("hidden");
+    }
+
+    function updateCredentials() {
+      const u = normalizeDigits(document.getElementById("secUserInput").value);
+      const p = normalizeDigits(document.getElementById("secPassInput").value);
+      if (!u) {
+        showToast("نام کاربری را وارد کنید.");
+        return;
+      }
+      state.auth.username = u;
+      if (p) {
+        if (p.length < 4) {
+          showToast("رمز عبور باید حداقل ۴ کاراکتر باشد.");
+          return;
+        }
+        state.auth.password = p;
+      }
+      saveJson(STORAGE_KEYS.AUTH, state.auth);
+      document.getElementById("secPassInput").value = "";
+      showToast("اطلاعات ورود ذخیره شد.");
+    }
+
+    /* WebAuthn Biometric */
+    function isBiometricAvailable() {
+      return Boolean(window.PublicKeyCredential && window.isSecureContext);
+    }
+
+    function b64ToBuf(b64) {
+      const bin = atob(b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      return buf;
+    }
+
+    function bufToB64(buf) {
+      const bytes = new Uint8Array(buf);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin);
+    }
+
+    async function registerBiometric() {
+      if (!isBiometricAvailable()) {
+        showToast("اثر انگشت در این مرورگر یا بستر پشتیبانی نمی‌شود.");
+        return;
+      }
+      try {
+        const challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        const userId = new Uint8Array(16);
+        crypto.getRandomValues(userId);
+
+        const cred = await navigator.credentials.create({
+          publicKey: {
+            challenge,
+            rp: { name: "ذهن تریدر" },
+            user: {
+              id: userId,
+              name: state.auth.username || "behnam",
+              displayName: state.auth.username || "behnam"
+            },
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+            authenticatorSelection: { userVerification: "required" },
+            timeout: 60000
+          }
+        });
+
+        if (cred && cred.rawId) {
+          state.auth.bioCredentialId = bufToB64(cred.rawId);
+          saveJson(STORAGE_KEYS.AUTH, state.auth);
+          refreshBiometricStatus();
+          showToast("ورود با اثر انگشت ثبت شد.");
+        }
+      } catch (e) {
+        showToast("ثبت اثر انگشت لغو شد یا ناموفق بود.");
+      }
+    }
+
+    async function unlockWithBiometric() {
+      if (!isBiometricAvailable()) {
+        showToast("بیومتریک در این محیط در دسترس نیست.");
+        return;
+      }
+      if (!state.auth.bioCredentialId) {
+        showToast("ابتدا با رمز عبور وارد شوید و اثر انگشت را ثبت کنید.");
+        return;
+      }
+      try {
+        const challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        const assertion = await navigator.credentials.get({
+          publicKey: {
+            challenge,
+            allowCredentials: [{
+              type: "public-key",
+              id: b64ToBuf(state.auth.bioCredentialId)
+            }],
+            userVerification: "required",
+            timeout: 60000
+          }
+        });
+        if (assertion) {
+          grantAccess();
+          showToast("ورود بیومتریک موفق بود.");
+        }
+      } catch (e) {
+        showToast("احراز هویت بیومتریک انجام نشد.");
+      }
+    }
+
+    function refreshBiometricStatus() {
+      const el = document.getElementById("bioStatusText");
+      const btn = document.getElementById("biometricLoginBtn");
+      if (!isBiometricAvailable()) {
+        el.textContent = "وضعیت بیومتریک: در این مرورگر یا حالت غیرامن فعال نیست.";
+        btn.style.opacity = "0.7";
+        return;
+      }
+      if (state.auth.bioCredentialId) {
+        el.textContent = "وضعیت بیومتریک: اثر انگشت روی این دستگاه فعال است.";
+        btn.style.opacity = "1";
+      } else {
+        el.textContent = "وضعیت بیومتریک: هنوز اثر انگشتی ثبت نشده است.";
+        btn.style.opacity = "0.85";
+      }
+    }
+
+    /* Navigation & Theme */
+    function switchTab(tabName, btnEl) {
+      document.querySelectorAll(".tab-view").forEach(v => v.classList.add("hidden"));
+      const target = document.getElementById("tab-" + tabName);
+      if (target) target.classList.remove("hidden");
+
+      document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
+      if (btnEl) {
+        btnEl.classList.add("active");
+      } else {
+        const navBtn = document.querySelector('.nav-item[data-tab="' + tabName + '"]');
+        if (navBtn) navBtn.classList.add("active");
+      }
+
+      if (tabName === "dashboard") {
+        renderChart();
+      } else if (tabName === "history") {
+        renderTrades();
+      } else if (tabName === "mind") {
+        renderRules();
+      }
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle("light-mode");
+      const isLight = document.body.classList.contains("light-mode");
+      saveJson(STORAGE_KEYS.THEME, { light: isLight });
+      renderChart();
+    }
+
+    /* Readiness */
+    function updateReadiness() {
+      const s = Number(document.getElementById("rngSleep").value);
+      const f = Number(document.getElementById("rngFocus").value);
+      const p = Number(document.getElementById("rngPlan").value);
+
+      document.getElementById("valSleep").textContent = s;
+      document.getElementById("valFocus").textContent = f;
+      document.getElementById("valPlan").textContent = p;
+
+      const score = Math.round(((s + f + p) / 15) * 100);
+      const badge = document.getElementById("readinessBadge");
+      const advice = document.getElementById("readinessAdvice");
+      badge.textContent = "آمادگی: " + score + "%";
+
+      if (score >= 75) {
+        badge.className = "badge badge-ok";
+        advice.className = "badge badge-ok";
+        advice.textContent = "وضعیت ذهنی مطلوب برای ورود منضبط به بازار";
+      } else if (score >= 50) {
+        badge.className = "badge badge-warn";
+        advice.className = "badge badge-warn";
+        advice.textContent = "آمادگی متوسط؛ حجم را محافظه‌کارانه انتخاب کنید";
+      } else {
+        badge.className = "badge badge-bad";
+        advice.className = "badge badge-bad";
+        advice.textContent = "هشدار: آمادگی ذهنی پایین است؛ از معامله پرهیز کنید";
+      }
+    }
+
+    /* Trades CRUD & Stats */
+    function computePsychScore(t) {
+      if (t.needsPsych) return 50;
+      let score = 100;
+      if (t.emotion && t.emotion !== "آرام و منضبط") score -= 25;
+      if (t.ruleStatus === "خطای جزئی") score -= 20;
+      if (t.ruleStatus === "نقض حد ضرر یا حجم") score -= 45;
+      return Math.max(0, Math.min(100, score));
+    }
+
+    function saveManualTrade(event) {
+      event.preventDefault();
+      const symbol = document.getElementById("mSymbol").value.trim().toUpperCase() || "XAUUSD";
+      const side = document.getElementById("mSide").value;
+      const lots = Number(document.getElementById("mLots").value) || 0.01;
+      const pnl = Number(document.getElementById("mPnl").value) || 0;
+      const emotion = document.getElementById("mEmotion").value;
+      const ruleStatus = document.getElementById("mRule").value;
+      const notes = document.getElementById("mNotes").value.trim();
+
+      const trade = {
+        id: "tr_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        source: "manual",
+        date: new Date().toISOString().slice(0, 16).replace("T", " "),
+        symbol,
+        side,
+        lots,
+        pnl,
+        emotion,
+        ruleStatus,
+        notes,
+        needsPsych: false
+      };
+
+      state.trades.unshift(trade);
+      saveJson(STORAGE_KEYS.TRADES, state.trades);
+      document.getElementById("mPnl").value = "";
+      document.getElementById("mNotes").value = "";
+      showToast("معامله با موفقیت ثبت شد.");
+      renderAll();
+      switchTab("history");
+    }
+
+    function deleteTrade(id) {
+      state.trades = state.trades.filter(t => t.id !== id);
+      saveJson(STORAGE_KEYS.TRADES, state.trades);
+      showToast("معامله حذف شد.");
+      renderAll();
+    }
+
+    function clearAllTrades() {
+      if (!state.trades.length) {
+        showToast("لیست معاملات خالی است.");
+        return;
+      }
+      if (confirm("آیا از حذف همه معاملات ثبت‌شده مطمئن هستید؟")) {
+        state.trades = [];
+        saveJson(STORAGE_KEYS.TRADES, state.trades);
+        showToast("همه معاملات پاک شدند.");
+        renderAll();
+      }
+    }
+
+    function setFilter(filterKey, el) {
+      state.filter = filterKey;
+      document.querySelectorAll("#filterChips .chip").forEach(c => c.classList.remove("active"));
+      if (el) el.classList.add("active");
+      renderTrades();
+    }
+
+    function renderStats() {
+      const trades = state.trades;
+      const total = trades.length;
+      const wins = trades.filter(t => Number(t.pnl) > 0).length;
+      const losses = trades.filter(t => Number(t.pnl) < 0).length;
+      const decisive = wins + losses;
+      const winRate = decisive > 0 ? Math.round((wins / decisive) * 100) : 0;
+
+      const netPnl = trades.reduce((acc, t) => acc + (Number(t.pnl) || 0), 0);
+      const grossProfit = trades.filter(t => Number(t.pnl) > 0).reduce((acc, t) => acc + Number(t.pnl), 0);
+      const grossLoss = Math.abs(trades.filter(t => Number(t.pnl) < 0).reduce((acc, t) => acc + Number(t.pnl), 0));
+      const pf = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : (grossProfit > 0 ? "∞" : "0.00");
+
+      const completed = trades.filter(t => !t.needsPsych);
+      const cleanCount = completed.filter(t => t.emotion === "آرام و منضبط" && t.ruleStatus === "کاملاً رعایت شد").length;
+      const cleanRate = completed.length > 0 ? Math.round((cleanCount / completed.length) * 100) : 0;
+      const avgPsych = completed.length > 0
+        ? Math.round(completed.reduce((acc, t) => acc + computePsychScore(t), 0) / completed.length)
+        : 0;
+
+      document.getElementById("statWinRate").textContent = winRate + "%";
+      document.getElementById("statWinLoss").textContent = wins + " برد / " + losses + " باخت";
+
+      const pnlEl = document.getElementById("statNetPnl");
+      pnlEl.textContent = (netPnl < 0 ? "-" : "") + "$" + Math.abs(netPnl).toFixed(2);
+      pnlEl.className = "stat-val " + (netPnl > 0 ? "pos" : netPnl < 0 ? "neg" : "");
+      document.getElementById("statTotalTrades").textContent = "بر اساس " + total + " معامله ثبت‌شده";
+
+      document.getElementById("statCleanRate").textContent = cleanRate + "%";
+      document.getElementById("statPsychAvg").textContent = "میانگین امتیاز روان: " + avgPsych + "/100";
+      document.getElementById("statPF").textContent = pf;
+
+      const pendingCount = trades.filter(t => t.needsPsych).length;
+      const banner = document.getElementById("pendingBanner");
+      const dot = document.getElementById("histDot");
+      if (pendingCount > 0) {
+        banner.classList.remove("hidden");
+        dot.classList.remove("hidden");
+        document.getElementById("pendingBannerDesc").textContent =
+          "تعداد " + pendingCount + " معامله واردشده از MT5 هنوز وضعیت روانی ندارند.";
+      } else {
+        banner.classList.add("hidden");
+        dot.classList.add("hidden");
+      }
+    }
+
+    function renderTrades() {
+      const listEl = document.getElementById("tradesList");
+      const q = (document.getElementById("searchSymbolInput").value || "").trim().toLowerCase();
+
+      const filtered = state.trades.filter(t => {
+        if (q && !String(t.symbol || "").toLowerCase().includes(q)) return false;
+        if (state.filter === "pending") return Boolean(t.needsPsych);
+        if (state.filter === "win") return Number(t.pnl) > 0;
+        if (state.filter === "loss") return Number(t.pnl) < 0;
+        if (state.filter === "mistake") return !t.needsPsych && (t.emotion !== "آرام و منضبط" || t.ruleStatus !== "کاملاً رعایت شد");
+        return true;
+      });
+
+      if (!filtered.length) {
+        listEl.innerHTML = '<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13px;">معامله‌ای با این فیلتر یافت نشد.</div>';
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(t => {
+        const pnl = Number(t.pnl) || 0;
+        const pnlText = (pnl < 0 ? "-" : "+") + "$" + Math.abs(pnl).toFixed(2);
+        const pnlClass = pnl > 0 ? "pos" : pnl < 0 ? "neg" : "";
+        const sourceBadge = t.source === "mt5" ? '<span class="badge badge-info">MT5 Sheet</span>' : '<span class="badge badge-ok">دستی</span>';
+        const psychBadge = t.needsPsych
+          ? '<span class="badge badge-warn">نیاز به تکمیل روانشناسی</span>'
+          : '<span class="badge badge-ok">' + escapeHtml(t.emotion || "ثبت‌شده") + '</span>';
+
+        return `
+          <div class="trade-card">
+            <div class="trade-head">
+              <div>
+                <strong>${escapeHtml(t.symbol)}</strong>
+                <span style="font-size:11.5px; color:var(--text-muted); margin-right:6px;">${escapeHtml(t.side || "")} • Lot ${escapeHtml(String(t.lots || 0))}</span>
+              </div>
+              <div class="${pnlClass}" style="font-weight:800; direction:ltr;">${pnlText}</div>
+            </div>
+            <div class="trade-meta">
+              ${sourceBadge}
+              ${psychBadge}
+              <span class="badge badge-info" style="direction:ltr;">${escapeHtml(t.date || "")}</span>
+            </div>
+            ${t.notes ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${escapeHtml(t.notes)}</div>` : ""}
+            <div class="trade-foot">
+              <button type="button" class="btn btn-danger btn-sm" onclick="deleteTrade('${t.id}')">حذف</button>
+              <button type="button" class="btn btn-warn btn-sm" onclick="openPsychModal('${t.id}')">
+                ${t.needsPsych ? "تکمیل وضعیت روانشناسی" : "ویرایش روانشناسی"}
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    /* Psychology Modal */
+    function openPsychModal(id) {
+      const tr = state.trades.find(t => t.id === id);
+      if (!tr) return;
+      state.editingTradeId = id;
+      document.getElementById("psychTradeSummary").textContent =
+        tr.symbol + " | " + (Number(tr.pnl) >= 0 ? "+" : "") + "$" + Number(tr.pnl).toFixed(2);
+      document.getElementById("pEmotion").value = tr.emotion || "آرام و منضبط";
+      document.getElementById("pRule").value = tr.ruleStatus || "کاملاً رعایت شد";
+      document.getElementById("pNotes").value = tr.notes || "";
+      document.getElementById("psychModal").classList.add("open");
+    }
+
+    function openNextPendingPsych() {
+      const next = state.trades.find(t => t.needsPsych);
+      if (next) {
+        switchTab("history");
+        openPsychModal(next.id);
+      }
+    }
+
+    function closePsychModal() {
+      state.editingTradeId = null;
+      document.getElementById("psychModal").classList.remove("open");
+    }
+
+    function savePsychModal() {
+      if (!state.editingTradeId) return;
+      const tr = state.trades.find(t => t.id === state.editingTradeId);
+      if (!tr) return;
+      tr.emotion = document.getElementById("pEmotion").value;
+      tr.ruleStatus = document.getElementById("pRule").value;
+      tr.notes = document.getElementById("pNotes").value.trim();
+      tr.needsPsych = false;
+      saveJson(STORAGE_KEYS.TRADES, state.trades);
+      closePsychModal();
+      showToast("وضعیت روانشناسی ذخیره شد.");
+      renderAll();
+    }
+
+    /* Chart */
+    function renderChart() {
+      const ctx = document.getElementById("pnlChart");
+      if (!ctx || typeof Chart === "undefined") return;
+      const ordered = [...state.trades].reverse();
+      let cum = 0;
+      const labels = ordered.map((t, idx) =
